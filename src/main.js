@@ -506,9 +506,10 @@ const SWORD_HILT = new THREE.Vector3(0, 0.45, 0), SWORD_BASE = new THREE.Vector3
 
 function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
+  if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
   h.act = { name, t: 0, def, hitDone: false, swung: false };
   h.attackId++;
-  if (def.type) {
+  if (def.type && name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') {
     // aim: stick direction, else nearest enemy in front-ish range
     const [mx, my] = input.move();
     if (Math.hypot(mx, my) > 0.2) h.face = Math.atan2(-mx, my);
@@ -525,6 +526,25 @@ function startAction(name) {
     h.iframe = def.iframes[1]; sfx.play('dodge');
   }
 }
+
+// light attack choice: running start -> thrust; during a combo the stick direction relative to
+// the hero picks a variation (back = rising launcher, side = diagonal cut); rage has its own chain
+function pickLight(prev) {
+  const [mx, my] = input.move();
+  const moving = Math.hypot(mx, my) > 0.3;
+  const rage = hero.rageT > 0;
+  if (!prev) return moving ? 'DASH' : 'L1';
+  if (moving) {
+    const rel = Math.abs(angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face);
+    if (rel > 2.3) return 'UPPER';
+    if (rel > 0.8) return 'CROSS';
+  }
+  const chain = rage
+    ? { L1: 'RFLIP', RFLIP: 'L2', L2: 'RSPIN2', RSPIN2: 'RLEAP', RLEAP: 'L1' }
+    : { L1: 'L2', L2: 'L3', L3: 'L1' };
+  return chain[prev] || (rage ? 'RFLIP' : 'L2');
+}
+function wrapAng(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
 
 function rageMult() { return hero.rageT > 0 ? 1.35 : 1; }
 
@@ -554,8 +574,8 @@ function updateHero(dt) {
   const act = h.act;
   if (wantDodge && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
-    if (wantHeavy) startAction('SPIN');
-    else if (wantAttack) startAction('L1');
+    if (wantHeavy) { h.spinLoops = 0; startAction('SPIN_IN'); }
+    else if (wantAttack) startAction(pickLight(null));
   } else if (act.def.type) {
     if (wantAttack) act.queued = 'light';
     if (wantHeavy) act.queued = 'heavy';
@@ -576,11 +596,27 @@ function updateHero(dt) {
       h.z += Math.cos(h.face) * sp * dt * (d.type ? speedK : 1);
     }
     if (d.sound && !a.swung && a.t >= d.active[0] - 0.06) { a.swung = true; sfx.play(d.sound); }
-    if (d.type && a.t >= d.chainAt && a.queued) {
-      const next = a.queued === 'heavy' ? 'SPIN' : ({ L1: 'L2', L2: 'L3', L3: 'L1', SPIN: 'L1' })[a.name];
-      startAction(next);
+    if (d.multi && !a.multiDone && a.t > (d.active[0] + d.active[1]) / 2) { a.multiDone = true; h.attackId++; }
+    if (a.name === 'SPIN_LOOP') {
+      // steer while spinning
+      if (moving > 0.2) { const tf = Math.atan2(-mx, my); h.x += Math.sin(tf) * 3.5 * dt; h.z += Math.cos(tf) * 3.5 * dt; }
+    }
+    if (a.name === 'SPIN_IN' && a.t >= d.dur) startAction('SPIN_LOOP');
+    else if (a.name === 'SPIN_LOOP' && a.t >= d.dur) {
+      // one rotation per loop; keep spinning while heavy is held (more loops when raging)
+      h.pose.rootYaw -= Math.PI * 2;
+      h.spinLoops = (h.spinLoops || 0) + 1;
+      const max = h.rageT > 0 ? 10 : 6;
+      if (input.held.has('heavy') && h.spinLoops < max) startAction('SPIN_LOOP');
+      else startAction('SPIN_OUT');
+    } else if (d.type && a.t >= d.chainAt && a.queued) {
+      if (a.queued === 'heavy') { h.spinLoops = 0; startAction('SPIN_IN'); }
+      else startAction(pickLight(a.name));
     } else if (a.t >= d.dur) {
       h.act = null;
+      // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
+      // smoothing does not unwind them backwards
+      h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0);
     }
   }
   if (!h.act) {
@@ -661,15 +697,15 @@ function heroHits(a) {
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
     const def = ENEMY[e.type];
-    if (bladeTouches(e.x, e.z, def.radius + 0.25, e.y, e.y + 1.8 * def.scale)) {
+    if (bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
-      damageEnemy(e, d.dmg * mult, d.kb, d.up || 0, a.name === 'SPIN' || a.name === 'L3');
+      damageEnemy(e, d.dmg * mult, d.kb, d.up || 0, !!d.heavy);
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, 1.2, 0, 4)) {
     boss.lastHit = h.attackId; any = true; damageBoss(d.dmg * mult * 1.0);
   }
-  if (any) { G.hitstop = Math.max(G.hitstop, a.name === 'SPIN' ? 0.03 : 0.055); sfx.play('hit'); }
+  if (any) { G.hitstop = Math.max(G.hitstop, (a.name === 'SPIN_LOOP' || a.name === 'RSPIN2') ? 0.025 : 0.055); sfx.play('hit'); }
 }
 
 function impact(a) {

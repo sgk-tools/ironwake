@@ -84,9 +84,9 @@ export function heroRun(phase, amt, out = {}) {
 }
 
 // shared horizontal sweep arm: right arm raised to the side, blade continuing outward along the arm
-const sweepArm = (swing, torsoYaw, lean = 0.15) => ({
+const sweepArm = (swing, torsoYaw, lean = 0.15, raise = -1.25) => ({
   pelvis: [0, torsoYaw * 0.4, 0], torso: [lean, torsoYaw * 0.6, 0], head: [0, -torsoYaw * 0.5, 0],
-  uarmR: [-0.1, swing, -1.25], farmR: [-0.15, 0, 0], handR: [1.45, 0, 0],
+  uarmR: [-0.1, swing, raise], farmR: [-0.15, 0, 0], handR: [1.45, 0, 0],
   uarmL: [-0.4, swing * 0.6, 0.6], farmL: [-0.9, 0, 0],
   thighR: [-0.35, 0, -0.15], shinR: [0.4, 0, 0], thighL: [0.15, 0, 0.15], shinL: [0.25, 0, 0],
   cloak: [0.5, 0, -torsoYaw * 0.2], rootY: -0.15,
@@ -115,7 +115,7 @@ export const HERO_ACTIONS = {
   },
   // overhead slam with ground shockwave
   L3: {
-    dur: 0.7, active: [0.28, 0.36], impact: 0.34, chainAt: 0.5, dmg: 42, kb: 7, up: 6, radius: 2.6, lunge: [0.1, 0.32, 6], sound: 'swingHeavy', type: 'slam',
+    dur: 0.7, heavy: true, active: [0.28, 0.36], impact: 0.34, chainAt: 0.5, dmg: 42, kb: 7, up: 6, radius: 2.6, lunge: [0.1, 0.32, 6], sound: 'swingHeavy', type: 'slam',
     keys: [
       [0, HERO.idle],
       [0.2, {
@@ -150,6 +150,93 @@ export const HERO_ACTIONS = {
       [0.18, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out'],
       [0.52, { ...sweepArm(0.6, 0.3, 0.25), rootYaw: 5.36, rootY: -0.25 }, 'lin'],
       [0.78, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
+    ],
+  },
+
+  // ---- directional variations ----
+  // attack while running: lunging thrust
+  DASH: {
+    dur: 0.56, active: [0.15, 0.32], chainAt: 0.34, dmg: 30, kb: 7, lunge: [0.06, 0.32, 11], sound: 'swing', type: 'thrust', reach: 0.35,
+    keys: [
+      [0, HERO.idle],
+      [0.13, { pelvis: [0, -0.4, 0], torso: [0.1, -0.5, 0], head: [0, 0.4, 0], uarmR: [0.55, 0, -0.25], farmR: [-1.6, 0, 0], handR: [1.05, 0, 0],
+        uarmL: [-0.6, 0, 0.3], farmL: [-1.0, 0, 0], thighR: [0.4, 0, 0], shinR: [0.6, 0, 0], thighL: [-0.7, 0, 0], shinL: [0.4, 0, 0], cloak: [0.5, 0, 0], rootY: -0.25 }, 'out'],
+      [0.3, { pelvis: [0.15, 0.3, 0], torso: [0.45, 0.3, 0], head: [-0.3, -0.2, 0], uarmR: [-1.55, 0, -0.05], farmR: [0, 0, 0], handR: [1.0, 0, 0],
+        uarmL: [0.4, 0, 0.3], farmL: [-0.3, 0, 0], thighR: [-1.0, 0, 0], shinR: [0.8, 0, 0], thighL: [0.7, 0, 0], shinL: [0.3, 0, 0], cloak: [1.1, 0, 0], rootY: -0.35 }, 'out'],
+      [0.56, HERO.idle, 'io'],
+    ],
+  },
+  // stick pulled back during a combo: turn and launch upward
+  UPPER: {
+    dur: 0.62, active: [0.15, 0.3], chainAt: 0.36, dmg: 28, kb: 2, up: 9, heavy: true, sound: 'swingHeavy', type: 'sweep',
+    keys: [
+      [0, { ...HERO.idle, uarmR: [0.5, 0, -0.3], farmR: [-0.3, 0, 0], handR: [2.3, 0, 0], torso: [0.45, 0, 0], rootY: -0.32 }],
+      [0.13, { ...HERO.idle, uarmR: [0.6, 0, -0.3], farmR: [-0.3, 0, 0], handR: [2.3, 0, 0], torso: [0.5, 0, 0], thighR: [-0.8, 0, 0], shinR: [1.2, 0, 0], rootY: -0.4 }, 'out'],
+      [0.3, { pelvis: [-0.15, 0, 0], torso: [-0.35, 0, 0], head: [-0.3, 0, 0], uarmR: [-2.7, 0, -0.2], farmR: [-0.2, 0, 0], handR: [1.7, 0, 0],
+        uarmL: [-2.2, 0, 0.3], farmL: [-0.5, 0, 0], thighR: [0.1, 0, 0], thighL: [-0.3, 0, 0], shinL: [0.2, 0, 0], cloak: [0.8, 0, 0], rootY: 0.12 }, 'out'],
+      [0.62, HERO.idle, 'io'],
+    ],
+  },
+  // stick to the side during a combo: high diagonal cut down across the body
+  CROSS: {
+    dur: 0.5, active: [0.1, 0.25], chainAt: 0.3, dmg: 30, kb: 5, lunge: [0.05, 0.22, 5], sound: 'swing', type: 'sweep',
+    keys: [
+      [0, { ...sweepArm(0.2, -0.5, -0.2, -2.3), rootRoll: 0.15 }],
+      [0.1, { ...sweepArm(0.0, -0.55, -0.2, -2.4), rootRoll: 0.2 }, 'out'],
+      [0.25, { ...sweepArm(1.5, 0.45, 0.25, -1.0), rootYaw: 0.25, rootRoll: -0.1, rootY: -0.25 }, 'out'],
+      [0.5, HERO.idle, 'io'],
+    ],
+  },
+  // ---- held heavy: spin in, loop while held, spin out ----
+  SPIN_IN: {
+    dur: 0.16, active: [-1, -1], chainAt: 99, type: 'spin',
+    keys: [[0, HERO.idle], [0.16, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out']],
+  },
+  SPIN_LOOP: {
+    dur: 0.3, active: [0.0, 0.3], chainAt: 99, dmg: 24, kb: 7, heavy: true, sound: 'swingHeavy', type: 'sweep',
+    keys: [[0, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }],
+      [0.3, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18 + (2 * Math.PI), rootY: -0.3 }, 'lin']],
+  },
+  SPIN_OUT: {
+    dur: 0.36, active: [-1, -1], chainAt: 0.2, type: 'spin',
+    keys: [[0, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }], [0.36, HERO.idle, 'io']],
+  },
+  // ---- rage-only moves ----
+  // vertical somersault cut: the blade wheels through a full vertical circle in front
+  RFLIP: {
+    dur: 0.74, active: [0.14, 0.52], chainAt: 0.5, dmg: 38, kb: 6, up: 4, heavy: true, lunge: [0.1, 0.5, 6.5], sound: 'swingHeavy', type: 'sweep',
+    keys: [
+      [0, HERO.idle],
+      [0.12, { torso: [0.5, 0, 0], uarmR: [-1.5, 0, -0.1], farmR: [0, 0, 0], handR: [1.5, 0, 0], uarmL: [-1.4, 0, 0.2], farmL: [-0.3, 0, 0],
+        thighR: [-0.6, 0, 0], shinR: [0.9, 0, 0], thighL: [-0.6, 0, 0], shinL: [0.9, 0, 0], cloak: [0.6, 0, 0], rootY: -0.2 }, 'out'],
+      [0.32, { torso: [0.6, 0, 0], uarmR: [-1.5, 0, -0.1], farmR: [0, 0, 0], handR: [1.5, 0, 0], uarmL: [-1.4, 0, 0.2], farmL: [-0.3, 0, 0],
+        thighR: [-1.4, 0, 0], shinR: [1.9, 0, 0], thighL: [-1.4, 0, 0], shinL: [1.9, 0, 0], cloak: [1.2, 0, 0], rootY: 1.0, rootPitch: Math.PI }, 'lin'],
+      [0.52, { torso: [0.5, 0, 0], uarmR: [-1.5, 0, -0.1], farmR: [0, 0, 0], handR: [1.5, 0, 0], uarmL: [-1.4, 0, 0.2], farmL: [-0.3, 0, 0],
+        thighR: [-0.9, 0, 0], shinR: [1.0, 0, 0], thighL: [-0.5, 0, 0], shinL: [0.8, 0, 0], cloak: [0.6, 0, 0], rootY: -0.25, rootPitch: (2 * Math.PI) }, 'lin'],
+      [0.74, { ...HERO.idle, rootPitch: (2 * Math.PI) }, 'io'],
+    ],
+  },
+  // double horizontal spin
+  RSPIN2: {
+    dur: 0.8, active: [0.14, 0.6], chainAt: 0.62, dmg: 30, kb: 8, heavy: true, lunge: [0.14, 0.6, 4], sound: 'swingHeavy', type: 'sweep', multi: 2,
+    keys: [
+      [0, HERO.idle],
+      [0.14, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out'],
+      [0.6, { ...sweepArm(0.4, 0.2, 0.25), rootYaw: 0.18 + 2 * (2 * Math.PI), rootY: -0.25 }, 'lin'],
+      [0.8, { ...HERO.idle, rootYaw: 2 * (2 * Math.PI) }, 'io'],
+    ],
+  },
+  // leaping overhead slam with a wide shockwave
+  RLEAP: {
+    dur: 0.95, active: [0.4, 0.5], impact: 0.5, chainAt: 0.72, dmg: 60, kb: 11, up: 8, radius: 4.6, heavy: true, lunge: [0.08, 0.46, 8], sound: 'swingHeavy', type: 'slam',
+    keys: [
+      [0, HERO.idle],
+      [0.12, { ...HERO.idle, thighR: [-0.9, 0, 0], shinR: [1.4, 0, 0], thighL: [-0.9, 0, 0], shinL: [1.4, 0, 0], torso: [0.5, 0, 0], rootY: -0.4 }, 'out'],
+      [0.34, { pelvis: [0, 0, 0], torso: [-0.4, 0, 0], head: [0.1, 0, 0], uarmR: [-2.9, 0, -0.15], farmR: [-0.6, 0, 0], handR: [0.05, 0, 0],
+        uarmL: [-2.7, 0, 0.2], farmL: [-0.7, 0, 0], thighR: [-1.0, 0, 0], shinR: [1.2, 0, 0], thighL: [-0.4, 0, 0], shinL: [0.8, 0, 0], cloak: [0.0, 0, 0], rootY: 1.5 }, 'out'],
+      [0.5, { pelvis: [0.2, 0, 0], torso: [0.7, 0, 0], head: [-0.4, 0, 0], uarmR: [-0.75, 0, -0.1], farmR: [-0.15, 0, 0], handR: [0.35, 0, 0],
+        uarmL: [-0.85, 0, 0.15], farmL: [-0.3, 0, 0], thighR: [-1.0, 0, 0], shinR: [1.1, 0, 0], thighL: [0.5, 0, 0], shinL: [0.7, 0, 0], cloak: [1.0, 0, 0], rootY: -0.42 }, 'in'],
+      [0.95, HERO.idle, 'io'],
     ],
   },
   DODGE: {
