@@ -57,7 +57,37 @@ manager.onProgress = (_u, done, total) => {
 };
 const gltf = new GLTFLoader(manager);
 const texLoader = new THREE.TextureLoader(manager);
-const loadG = (n) => new Promise((res, rej) => gltf.load(`assets/${n}.gltf.json`, res, undefined, rej));
+// Models ship as glTF JSON whose binary buffer is base64 inside the file. The viewer's security policy
+// blocks fetching data: URIs, so decode it here and hand GLTFLoader a GLB built in memory instead.
+function jsonToGlb(json) {
+  const uri = json.buffers[0].uri;
+  const b64 = uri.slice(uri.indexOf(',') + 1);
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  delete json.buffers[0].uri;
+  const enc = new TextEncoder().encode(JSON.stringify(json));
+  const jLen = Math.ceil(enc.length / 4) * 4, bLen = Math.ceil(bin.length / 4) * 4;
+  const out = new Uint8Array(12 + 8 + jLen + 8 + bLen);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
+  dv.setUint32(12, jLen, true); dv.setUint32(16, 0x4E4F534A, true);
+  out.fill(0x20, 20, 20 + jLen); out.set(enc, 20);
+  const o = 20 + jLen;
+  dv.setUint32(o, bLen, true); dv.setUint32(o + 4, 0x004E4942, true); out.set(bin, o + 8);
+  return out.buffer;
+}
+const loadG = (n) => {
+  manager.itemStart(n);
+  return fetch(`assets/${n}.gltf.json`)
+    .then(r => { if (!r.ok) throw new Error(`${n}: HTTP ${r.status}`); return r.json(); })
+    .then(j => new Promise((res, rej) => {
+      // GLTFLoader decodes embedded images with fetch(blob:) when createImageBitmap exists; the viewer's
+      // policy refuses that, so hide it while the parser is created and it falls back to <img> elements.
+      const cib = window.createImageBitmap;
+      try { window.createImageBitmap = undefined; gltf.parse(jsonToGlb(j), '', res, rej); }
+      finally { window.createImageBitmap = cib; }
+    }))
+    .finally(() => manager.itemEnd(n));
+};
 const loadT = (n) => new Promise((res, rej) => texLoader.load(`assets/${n}`, res, undefined, rej));
 
 let A = null;
@@ -1090,20 +1120,34 @@ function debugPose(name, t, yaw = 0.6, dist = 5, who = 'hero') {
 }
 
 // ======================================================================= boot
+// surface any uncaught failure on the loading screen instead of hanging silently
+function showBootError(msg) {
+  if (G.state !== 'loading') return;
+  UI.loadText.textContent = `起動に失敗した（${msg}）。この表示を伝えてほしい。`;
+}
+window.addEventListener('error', e => showBootError(e.message || 'error'));
+window.addEventListener('unhandledrejection', e => showBootError((e.reason && e.reason.message) || String(e.reason)));
+setTimeout(() => showBootError('60秒以内に起動しなかった'), 60000);
+
 async function boot() {
   try {
     await loadAll();
   } catch (err) {
-    UI.loadText.textContent = 'データの読み込みに失敗した。通信状態を確認して再読み込みしてほしい。';
+    UI.loadText.textContent = `データの読み込みに失敗した（${err && err.message || err}）。再読み込みしてほしい。`;
     console.error(err); return;
   }
-  buildWorld();
-  fx = new FX();
-  crowd = new Crowd(A.grunt, A.skel, { gsword: A.weapons.gsword, club: A.weapons.club }, 64);
-  hero = makeHero();
-  boss = makeBoss(); boss.rig.root.visible = false; boss.state = 'hidden';
-  // warm up shaders so the first fight frame does not stall
-  renderer.compile(scene, camera);
+  try {
+    buildWorld();
+    fx = new FX();
+    crowd = new Crowd(A.grunt, A.skel, { gsword: A.weapons.gsword, club: A.weapons.club }, 64);
+    hero = makeHero();
+    boss = makeBoss(); boss.rig.root.visible = false; boss.state = 'hidden';
+    // warm up shaders so the first fight frame does not stall
+    renderer.compile(scene, camera);
+  } catch (err) {
+    UI.loadText.textContent = `起動に失敗した（${err && err.message || err}）。この表示を伝えてほしい。`;
+    console.error(err); return;
+  }
   G.state = 'title';
   $('#loading').hidden = true; UI.title.hidden = false;
   window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose };
