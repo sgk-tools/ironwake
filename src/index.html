@@ -1,0 +1,244 @@
+<title>Ironwake</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d0706">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+/* Layout: full-bleed WebGL battlefield; HUD hugs the safe-area edges, controls sit in the thumb zones. */
+:root {
+  --ink: #0d0706;          /* scorched black */
+  --ash: #e9ddd2;          /* bone-white text */
+  --ash-dim: #a8968a;
+  --blood: #b3150c;        /* hit points */
+  --ember: #ff6a2a;        /* rage, accents */
+  --iron: #3a302c;         /* panels, empty bars */
+  --glass: rgba(16, 9, 8, 0.62);
+  --f-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --f-ui: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --sl: max(16px, env(safe-area-inset-left, 0px));
+  --sr: max(16px, env(safe-area-inset-right, 0px));
+  --st: max(10px, env(safe-area-inset-top, 0px));
+  --sb: max(12px, env(safe-area-inset-bottom, 0px));
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; overflow: hidden; background: var(--ink); color: var(--ash); }
+body {
+  font-family: var(--f-ui); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent; touch-action: none; overscroll-behavior: none;
+}
+#game { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; touch-action: none; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; touch-action: manipulation; }
+button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
+
+/* ---------- loading ---------- */
+#loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--ink); z-index: 50; }
+.load-inner { width: min(360px, 80vw); display: grid; gap: 14px; text-align: center; }
+.load-mark { font-family: var(--f-display); font-size: 30px; letter-spacing: 0.32em; color: var(--ash); padding-left: 0.32em; }
+.load-track { height: 3px; background: var(--iron); overflow: hidden; }
+#load-bar { height: 100%; width: 0; background: var(--ember); transition: width 0.2s; }
+#load-text { font-size: 13px; color: var(--ash-dim); letter-spacing: 0.06em; }
+
+/* ---------- title ---------- */
+#title {
+  position: fixed; inset: 0; z-index: 40; display: grid; align-content: end;
+  padding: var(--st) var(--sr) var(--sb) var(--sl);
+  background:
+    linear-gradient(180deg, rgba(13,7,6,0) 30%, rgba(13,7,6,0.85) 78%, var(--ink) 100%),
+    linear-gradient(90deg, rgba(13,7,6,0.9) 0%, rgba(13,7,6,0) 60%),
+    url("assets/title.jpg") center 30% / cover no-repeat, var(--ink);
+}
+.title-inner { display: grid; gap: 14px; max-width: 560px; padding-bottom: 6px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.4em; color: var(--ember); text-transform: uppercase; }
+.logo { font-family: var(--f-display); font-weight: 800; line-height: 0.95; margin: 0; }
+.logo .jp { display: block; font-size: clamp(40px, 8.5vw, 76px); letter-spacing: 0.06em; text-shadow: 0 2px 24px rgba(0,0,0,0.8); }
+.logo .en { display: block; font-size: clamp(13px, 2.2vw, 17px); letter-spacing: 0.62em; color: var(--ash-dim); margin-top: 10px; font-family: var(--f-ui); font-weight: 700; }
+.lede { margin: 0; font-size: 14px; line-height: 1.75; color: var(--ash-dim); max-width: 40ch; text-wrap: pretty; }
+.title-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 6px; }
+.btn-primary {
+  font-family: var(--f-display); font-size: 20px; letter-spacing: 0.3em; padding: 14px 30px 14px 36px;
+  background: var(--blood); color: #fff; clip-path: polygon(0 0, 100% 0, 94% 100%, 0 100%);
+  box-shadow: 0 8px 30px rgba(179,21,12,0.35);
+}
+.btn-primary:active { transform: translateY(1px); filter: brightness(1.15); }
+.btn-ghost { font-size: 14px; letter-spacing: 0.12em; padding: 12px 18px; border: 1px solid rgba(233,221,210,0.28); }
+.keys { font-size: 12px; color: var(--ash-dim); line-height: 1.7; letter-spacing: 0.04em; }
+.keys b { color: var(--ash); font-weight: 700; }
+.rotate-hint { display: none; font-size: 12px; color: var(--ember); letter-spacing: 0.1em; }
+@media (orientation: portrait) and (pointer: coarse) { .rotate-hint { display: block; } }
+@media (pointer: coarse) { .keys.desk { display: none; } }
+@media (pointer: fine) { .keys.touch { display: none; } }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+.top { position: absolute; top: var(--st); left: var(--sl); right: var(--sr); display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.vitals { display: grid; gap: 6px; width: min(300px, 42vw); }
+.bar { position: relative; height: 12px; background: var(--iron); clip-path: polygon(0 0, 100% 0, 97% 100%, 0 100%); overflow: hidden; }
+.bar > i { position: absolute; inset: 0; transform-origin: left center; display: block; }
+#hp-lag { background: #f1d3c4; opacity: 0.55; }
+#hp-fill { background: linear-gradient(90deg, #6f0a05, var(--blood)); }
+.bar.rage { height: 6px; width: 78%; }
+#rage-fill { background: linear-gradient(90deg, #9c2d0b, var(--ember)); transform: scaleX(0); }
+body.rage-ready #rage-fill { animation: glow 0.8s ease-in-out infinite alternate; }
+body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
+@keyframes glow { from { filter: brightness(1); } to { filter: brightness(1.6); } }
+.vlabel { display: flex; gap: 8px; align-items: baseline; font-size: 11px; letter-spacing: 0.18em; color: var(--ash-dim); }
+.vlabel strong { font-family: var(--f-display); font-size: 15px; letter-spacing: 0.12em; color: var(--ash); }
+.center-top { display: grid; justify-items: center; gap: 6px; flex: 1; min-width: 0; }
+#objective { font-size: 13px; letter-spacing: 0.12em; color: var(--ash); background: var(--glass); padding: 4px 12px; white-space: nowrap; }
+#boss { width: min(440px, 46vw); display: grid; gap: 4px; justify-items: center; }
+#boss .name { font-family: var(--f-display); font-size: 14px; letter-spacing: 0.3em; color: #ffb8a0; }
+#boss .bar { width: 100%; height: 9px; clip-path: none; }
+#boss-fill { background: linear-gradient(90deg, #5e0703, #d2240f); }
+.right-top { display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+.ko { display: grid; justify-items: end; line-height: 1; padding-right: 4px; }
+.ko small { font-size: 10px; letter-spacing: 0.3em; color: var(--ash-dim); }
+#ko { font-family: var(--f-display); font-size: 30px; font-variant-numeric: tabular-nums; }
+.icon-btn { width: 40px; height: 40px; display: grid; place-items: center; background: var(--glass); border: 1px solid rgba(233,221,210,0.16); }
+.icon-btn svg { width: 18px; height: 18px; fill: none; stroke: var(--ash); stroke-width: 2; }
+#btn-sound.off .wave { display: none; }
+#btn-sound:not(.off) .mute { display: none; }
+
+#combo { position: absolute; right: calc(var(--sr) + 6px); top: 32%; text-align: right; line-height: 0.9; }
+#combo-n { display: block; font-family: var(--f-display); font-size: clamp(42px, 7vw, 64px); color: #fff; text-shadow: 0 0 18px rgba(255,90,30,0.65), 0 2px 0 #4a0a05; font-variant-numeric: tabular-nums; }
+#combo small { font-size: 12px; letter-spacing: 0.5em; color: var(--ember); }
+#combo.pop #combo-n { animation: pop 0.18s ease-out; }
+@keyframes pop { from { transform: scale(1.35); } to { transform: scale(1); } }
+
+#wave-banner { position: absolute; left: 0; right: 0; top: 34%; display: grid; justify-items: center; gap: 6px; opacity: 0; transform: translateY(8px); transition: opacity 0.35s, transform 0.35s; }
+#wave-banner.show { opacity: 1; transform: none; }
+#wave-label { font-family: var(--f-display); font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.4em; padding-left: 0.4em; text-shadow: 0 2px 22px #000; }
+#wave-sub { font-size: 13px; letter-spacing: 0.2em; color: var(--ash-dim); background: var(--glass); padding: 4px 14px; }
+#wave-banner::before { content: ""; width: min(420px, 70vw); height: 1px; background: linear-gradient(90deg, transparent, var(--ember), transparent); }
+
+#hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(150,0,0,0.65) 100%); }
+#hurt.on { animation: hurt 0.5s ease-out; }
+@keyframes hurt { from { opacity: 1; } to { opacity: 0; } }
+body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(255,40,10,0.45); animation: glow 0.5s infinite alternate; }
+
+/* ---------- touch controls ---------- */
+#stick-zone { position: absolute; left: 0; bottom: 0; width: 48%; height: 72%; pointer-events: auto; touch-action: none; }
+.stick-base, .stick-knob { position: absolute; left: 0; top: 0; border-radius: 50%; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.stick-base { width: 124px; height: 124px; margin: -62px 0 0 -62px; border: 2px solid rgba(233,221,210,0.3); background: rgba(16,9,8,0.35); }
+.stick-knob { width: 54px; height: 54px; margin: -27px 0 0 -27px; background: rgba(233,221,210,0.55); }
+#stick-zone.active .stick-base, #stick-zone.active .stick-knob { opacity: 1; }
+.stick-hint { position: absolute; left: calc(var(--sl) + 40px); bottom: calc(var(--sb) + 40px); width: 96px; height: 96px; border-radius: 50%; border: 2px dashed rgba(233,221,210,0.18); display: grid; place-items: center; font-size: 11px; color: rgba(233,221,210,0.45); letter-spacing: 0.15em; }
+#stick-zone.active .stick-hint { opacity: 0; }
+@media (pointer: fine) { #stick-zone, .pad { display: none; } }
+
+.pad { position: absolute; right: var(--sr); bottom: var(--sb); width: 230px; height: 210px; pointer-events: none; }
+.pad button {
+  position: absolute; border-radius: 50%; pointer-events: auto; touch-action: none; display: grid; place-items: center; align-content: center;
+  background: radial-gradient(circle at 50% 35%, rgba(70,40,34,0.85), rgba(20,11,9,0.85)); border: 1.5px solid rgba(233,221,210,0.28);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5); transition: transform 0.06s, filter 0.06s;
+}
+.pad button.down { transform: scale(0.92); filter: brightness(1.5); }
+.pad .k { font-family: var(--f-display); font-size: 26px; line-height: 1; }
+.pad .s { font-size: 9px; letter-spacing: 0.14em; color: var(--ash-dim); margin-top: 3px; }
+#btn-attack { width: 96px; height: 96px; right: 6px; bottom: 6px; border-color: rgba(255,106,42,0.6); }
+#btn-attack .k { font-size: 36px; }
+#btn-heavy { width: 70px; height: 70px; right: 112px; bottom: 4px; }
+#btn-dodge { width: 70px; height: 70px; right: 24px; bottom: 114px; }
+#btn-rage { width: 62px; height: 62px; right: 112px; bottom: 92px; opacity: 0.45; }
+#btn-rage .k { font-size: 18px; }
+#btn-rage.ready { opacity: 1; border-color: var(--ember); box-shadow: 0 0 22px rgba(255,90,30,0.7); animation: glow 0.7s infinite alternate; }
+
+/* ---------- overlays ---------- */
+.overlay { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: rgba(10,5,4,0.78); padding: var(--st) var(--sr) var(--sb) var(--sl); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.panel { display: grid; gap: 16px; justify-items: center; text-align: center; width: min(460px, 100%); }
+.panel h2 { font-family: var(--f-display); font-size: clamp(34px, 6vw, 48px); letter-spacing: 0.3em; padding-left: 0.3em; margin: 0; text-wrap: balance; }
+.panel p { margin: 0; color: var(--ash-dim); font-size: 14px; letter-spacing: 0.06em; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; border-top: 1px solid rgba(233,221,210,0.15); border-bottom: 1px solid rgba(233,221,210,0.15); }
+.stats div { display: grid; gap: 2px; padding: 12px 4px; }
+.stats dt { font-size: 10px; letter-spacing: 0.24em; color: var(--ash-dim); }
+.stats dd { margin: 0; font-family: var(--f-display); font-size: 26px; font-variant-numeric: tabular-nums; }
+#r-rank { color: var(--ember); }
+#result:not(.win) h2 { color: #d9a59a; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+@media (max-height: 420px) { .title-inner { gap: 8px; } .lede { display: none; } .pad { transform: scale(0.88); transform-origin: right bottom; } }
+@media (prefers-reduced-motion: reduce) { #combo.pop #combo-n, body.rage-ready #rage-fill, #btn-rage.ready { animation: none; } }
+</style>
+
+<canvas id="game" aria-label="戦場"></canvas>
+
+<div id="loading">
+  <div class="load-inner">
+    <div class="load-mark">IRONWAKE</div>
+    <div class="load-track"><div id="load-bar"></div></div>
+    <div id="load-text">装備を整えている… 0%</div>
+  </div>
+</div>
+
+<section id="title" hidden>
+  <div class="title-inner">
+    <div class="eyebrow">一騎当千 ダークファンタジー アクション</div>
+    <h1 class="logo"><span class="jp">鉄塊の傭兵</span><span class="en">IRONWAKE</span></h1>
+    <p class="lede">身の丈を超える鉄塊を背負い、亡者の軍勢に一人で挑む。三つの波を斬り抜け、角の魔騎士を討て。</p>
+    <div class="title-actions">
+      <button class="btn-primary" id="btn-start">出陣</button>
+      <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
+    </div>
+    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（長押しで連続） ／ <b>重</b>回転斬り ／ <b>避</b>回避 ／ <b>覚醒</b>ゲージ満タンで発動</div>
+    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃 ／ <b>K</b> 回転斬り ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止</div>
+  </div>
+</section>
+
+<div id="hud" hidden>
+  <div id="hurt"></div>
+  <div class="top">
+    <div class="vitals">
+      <div class="vlabel"><strong>傭兵</strong>体力</div>
+      <div class="bar"><i id="hp-lag"></i><i id="hp-fill"></i></div>
+      <div class="bar rage"><i id="rage-fill"></i></div>
+    </div>
+    <div class="center-top">
+      <div id="objective">残り — 体</div>
+      <div id="boss" hidden><span class="name">角の魔騎士</span><div class="bar"><i id="boss-fill"></i></div></div>
+    </div>
+    <div class="right-top">
+      <div class="ko"><small>撃破</small><span id="ko">0</span></div>
+      <button class="icon-btn" id="btn-sound" aria-label="サウンド切替" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/><path class="mute" d="M16 9l5 6M21 9l-5 6"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-pause" aria-label="一時停止">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="combo" hidden><span id="combo-n">0</span><small>HITS</small></div>
+  <div id="wave-banner"><div id="wave-label">第一波</div><div id="wave-sub"></div></div>
+  <div id="stick-zone"><div class="stick-hint">移動</div><div class="stick-base"></div><div class="stick-knob"></div></div>
+  <div class="pad">
+    <button id="btn-rage" aria-label="覚醒"><span class="k">覚醒</span></button>
+    <button id="btn-dodge" aria-label="回避"><span class="k">避</span><span class="s">回避</span></button>
+    <button id="btn-heavy" aria-label="回転斬り"><span class="k">重</span><span class="s">回転</span></button>
+    <button id="btn-attack" aria-label="攻撃"><span class="k">斬</span><span class="s">連撃</span></button>
+  </div>
+</div>
+
+<div id="pause" class="overlay" hidden>
+  <div class="panel">
+    <h2>一時停止</h2>
+    <div class="row"><button class="btn-primary" id="btn-resume">再開</button><button class="btn-ghost" id="btn-quit">タイトルへ戻る</button></div>
+  </div>
+</div>
+
+<div id="result" class="overlay" hidden>
+  <div class="panel">
+    <h2 id="result-title">討伐完了</h2>
+    <p id="result-sub"></p>
+    <dl class="stats">
+      <div><dt>撃破</dt><dd id="r-ko">0</dd></div>
+      <div><dt>最大連撃</dt><dd id="r-combo">0</dd></div>
+      <div><dt>時間</dt><dd id="r-time">0:00</dd></div>
+      <div><dt>評価</dt><dd id="r-rank">—</dd></div>
+    </dl>
+    <div class="row"><button class="btn-primary" id="btn-retry">再出陣</button><button class="btn-ghost" id="btn-title">タイトルへ</button></div>
+  </div>
+</div>
+
+<script src="game.js"></script>

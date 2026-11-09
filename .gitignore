@@ -1,0 +1,6 @@
+node_modules/
+cc0/
+build_tex/
+dist/
+assets/*.glb.bak
+*.log
