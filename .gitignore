@@ -4,3 +4,4 @@ build_tex/
 dist/
 assets/*.glb.bak
 *.log
+dist-stage1/
