@@ -862,9 +862,12 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
   }
 }
 
+const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2']);
 function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;
+  // spinning attacks are invulnerable (charged spin and the spins inside combos)
+  if (h.act && SPIN_MOVES.has(h.act.name)) return;
   h.hp -= dmg * (h.rageT > 0 ? 0.6 : 1);
   h.iframe = 0.6;
   sfx.play('hurt'); G.shake = Math.max(G.shake, 0.35);
@@ -1346,7 +1349,7 @@ async function boot() {
   }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));
