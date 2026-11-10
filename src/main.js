@@ -273,7 +273,7 @@ class FX {
     // blood droplets
     this.dropMax = 360;
     const dg = new THREE.IcosahedronGeometry(0.045, 0);
-    this.dropMat = new THREE.MeshStandardMaterial({ color: 0x5a0303, roughness: 0.45, metalness: 0, envMapIntensity: 0.25 });
+    this.dropMat = new THREE.MeshStandardMaterial({ color: 0x3a0202, roughness: 0.45, metalness: 0, envMapIntensity: 0.25 });
     this.drops = new THREE.InstancedMesh(dg, this.dropMat, this.dropMax);
     this.drops.frustumCulled = false; this.drops.count = 0; scene.add(this.drops);
     this.dp = []; // {x,y,z,vx,vy,vz,life,s}
@@ -281,7 +281,7 @@ class FX {
     this.decMax = 140;
     const tex = new THREE.CanvasTexture(splatCanvas());
     tex.colorSpace = THREE.SRGBColorSpace;
-    this.decMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 0.6, metalness: 0, envMapIntensity: 0.2, color: 0x5a0505, polygonOffset: true, polygonOffsetFactor: -2 });
+    this.decMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 0.6, metalness: 0, envMapIntensity: 0.15, color: 0x2a0202, polygonOffset: true, polygonOffsetFactor: -2 });
     const pg = new THREE.PlaneGeometry(1, 1); pg.rotateX(-Math.PI / 2);
     this.decals = new THREE.InstancedMesh(pg, this.decMat, this.decMax);
     this.decals.frustumCulled = false; this.decals.count = 0; this.decals.receiveShadow = true; scene.add(this.decals);
@@ -293,6 +293,20 @@ class FX {
     this.sparks = new THREE.InstancedMesh(sg, this.sparkMat, this.sparkMax);
     this.sparks.frustumCulled = false; this.sparks.count = 0; scene.add(this.sparks);
     this.sp = [];
+    // hit flashes: additive billboards (star bursts and long slash streaks)
+    this.flMax = 80;
+    this.flMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, map: new THREE.CanvasTexture(starCanvas()) });
+    this.flashMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), this.flMat, this.flMax);
+    this.flashMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.flMax * 3), 3);
+    this.flashMesh.frustumCulled = false; this.flashMesh.count = 0; scene.add(this.flashMesh);
+    this.fl = [];
+    // blood mist: soft dark-red puffs that swell and fade
+    this.miMax = 90;
+    this.miMat = new THREE.MeshBasicMaterial({ color: 0x5a0606, transparent: true, depthWrite: false, opacity: 0.55, map: new THREE.CanvasTexture(puffCanvas()) });
+    this.mistMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), this.miMat, this.miMax);
+    this.mistMesh.frustumCulled = false; this.mistMesh.count = 0; scene.add(this.mistMesh);
+    this.mi = [];
+    this._rq = new THREE.Quaternion(); this._fwd = new THREE.Vector3(0, 0, 1);
     // shockwave rings
     this.rings = [];
     this.ringGeo = new THREE.RingGeometry(0.8, 1, 48); this.ringGeo.rotateX(-Math.PI / 2);
@@ -328,6 +342,21 @@ class FX {
       if (this.dp.length >= this.dropMax) this.dp.shift();
       const sp = (2 + Math.random() * 4) * power;
       this.dp.push({ x, y, z, vx: dx * sp + (Math.random() - 0.5) * 3, vy: 1.5 + Math.random() * 4 * power, vz: dz * sp + (Math.random() - 0.5) * 3, life: 1.2, s: 0.6 + Math.random() * 1.4 });
+    }
+  }
+  // bright impact: a star burst plus a long streak across the cut, tinted for kills
+  hitFlash(x, y, z, big = false, kill = false) {
+    const add = (o) => { if (this.fl.length >= this.flMax) this.fl.shift(); this.fl.push(o); };
+    const col = kill ? [1.0, 0.55, 0.3] : [1.0, 0.85, 0.7];
+    add({ x, y, z, w: big ? 2.2 : 1.5, h: big ? 2.2 : 1.5, rot: Math.random() * 6, life: 0.14, max: 0.14, col });
+    add({ x, y, z, w: big ? 4.2 : 3.0, h: 0.22, rot: Math.random() * 6, life: 0.16, max: 0.16, col: [1.0, 0.95, 0.85] });
+    if (kill) add({ x, y, z, w: 3.4, h: 0.16, rot: Math.random() * 6, life: 0.2, max: 0.2, col: [1.0, 0.4, 0.2] });
+  }
+  mist(x, y, z, dx, dz, n = 3) {
+    for (let i = 0; i < n; i++) {
+      if (this.mi.length >= this.miMax) this.mi.shift();
+      this.mi.push({ x: x + (Math.random() - 0.5) * 0.3, y: y + (Math.random() - 0.5) * 0.3, z: z + (Math.random() - 0.5) * 0.3,
+        vx: dx * (1 + Math.random() * 2), vy: 0.3 + Math.random() * 0.6, vz: dz * (1 + Math.random() * 2), life: 0.7, max: 0.7, s: 0.4 + Math.random() * 0.4 });
     }
   }
   decal(x, z, s) {
@@ -401,6 +430,27 @@ class FX {
       _m.compose(_v.set(p.x, p.y, p.z), camera.quaternion, _s.set(s, s, s)); this.sparks.setMatrixAt(n++, _m);
     }
     this.sparks.count = n; this.sparks.instanceMatrix.needsUpdate = true;
+    // flashes (billboards spun around the view axis)
+    n = 0;
+    for (let i = this.fl.length - 1; i >= 0; i--) { const f = this.fl[i]; f.life -= dt; if (f.life <= 0) this.fl.splice(i, 1); }
+    for (const f of this.fl) {
+      const u = f.life / f.max, k = u * u;
+      _q.copy(camera.quaternion).multiply(this._rq.setFromAxisAngle(this._fwd, f.rot));
+      _m.compose(_v.set(f.x, f.y, f.z), _q, _s.set(f.w * (0.6 + 0.4 * (1 - u)) , f.h * (0.5 + 0.5 * u), 1));
+      this.flashMesh.setMatrixAt(n, _m);
+      this.flashMesh.instanceColor.setXYZ(n++, f.col[0] * k * 2, f.col[1] * k * 2, f.col[2] * k * 2);
+    }
+    this.flashMesh.count = n; this.flashMesh.instanceMatrix.needsUpdate = true; this.flashMesh.instanceColor.needsUpdate = true;
+    // blood mist
+    n = 0;
+    for (let i = this.mi.length - 1; i >= 0; i--) { const m = this.mi[i]; m.life -= dt; if (m.life <= 0) { this.mi.splice(i, 1); continue; }
+      m.x += m.vx * dt; m.y += m.vy * dt; m.z += m.vz * dt; m.vx *= 0.92; m.vz *= 0.92; }
+    for (const m of this.mi) {
+      const u = 1 - m.life / m.max, sc = m.s * (1 + u * 2.2) * (1 - u * 0.3);
+      _m.compose(_v.set(m.x, m.y, m.z), camera.quaternion, _s.set(sc, sc, sc)); this.mistMesh.setMatrixAt(n++, _m);
+    }
+    this.mistMesh.count = n; this.mistMesh.instanceMatrix.needsUpdate = true;
+    this.miMat.opacity = 0.5;
     // rings
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const r = this.rings[i]; r.t += dt;
@@ -432,6 +482,7 @@ class FX {
     this.trail.visible = this.trailOn > 0.02;
   }
   clear() {
+    this.fl.length = 0; this.mi.length = 0;
     this.dp.length = 0; this.dec.length = 0; this.sp.length = 0; this.trailHist.length = 0;
     for (const r of this.rings) scene.remove(r.m); this.rings.length = 0;
     for (const t of this.tele) scene.remove(t.m, t.inner); this.tele.length = 0;
@@ -450,6 +501,26 @@ function splatCanvas() {
     g.beginPath(); g.ellipse(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, s, s * (0.6 + r() * 0.4), a, 0, 6.28); g.fill();
   }
   return c;
+}
+function starCanvas() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,230,200,0.9)'); gr.addColorStop(0.5, 'rgba(255,140,60,0.25)'); gr.addColorStop(1, 'rgba(255,80,20,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  g.globalCompositeOperation = 'lighter';
+  for (const [w, h] of [[128, 10], [10, 128]]) {
+    const lg = g.createLinearGradient(64 - w / 2, 64 - h / 2, 64 + w / 2, 64 + h / 2);
+    lg.addColorStop(0, 'rgba(255,255,255,0)'); lg.addColorStop(0.5, 'rgba(255,255,255,0.9)'); lg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = lg; g.fillRect(64 - w / 2, 64 - h / 2, w, h);
+  }
+  return c;
+}
+function puffCanvas() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return c;
 }
 function dotCanvas() {
   const c = document.createElement('canvas'); c.width = c.height = 32;
@@ -862,17 +933,27 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
   e.hp -= dmg; addCombo();
   const sx = ox ?? hero.x, sz = oz ?? hero.z;
   let dx = e.x - sx, dz = e.z - sz; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-  const k = def.armor && !heavy ? 0.25 : 1;
-  e.vx += dx * kb * k; e.vz += dz * kb * k;
-  fx.blood(e.x, e.y + 1.1 * def.scale, e.z, dx, dz, heavy ? 18 : 11);
-  fx.decal(e.x + dx * 0.6, e.z + dz * 0.6, 0.9 + Math.random() * 0.8);
-  if (e.hp <= 0) {
-    e.dead = true; e.state = 'dead'; e.t = 0; e.vy = (up || 2) * (0.6 + Math.random() * 0.6);
-    e.spin = (Math.random() - 0.5) * 6; G.ko++; gainExp(def.exp || 1);
+  const k = def.armor && !heavy ? 0.3 : 1;
+  const kill = e.hp <= 0;
+  // launch: far stronger push, with lift on every clean hit and big air on kills
+  const push = kb * k * (kill ? 2.6 : 1.7);
+  e.vx += dx * push; e.vz += dz * push;
+  const hy = e.y + 1.1 * def.scale, hx = e.x - dx * 0.35, hz = e.z - dz * 0.35;
+  fx.hitFlash(hx, hy, hz, heavy, kill);
+  fx.blood(hx, hy, hz, dx, dz, kill ? 30 : heavy ? 22 : 14, kill ? 1.6 : 1.2);
+  fx.mist(hx, hy, hz, dx, dz, kill ? 5 : 3);
+  fx.spark(hx, hy, hz, heavy ? 10 : 5);
+  fx.decal(e.x + dx * 0.6, e.z + dz * 0.6, 1.0 + Math.random() * 1.0);
+  if (kill) {
+    e.dead = true; e.state = 'dead'; e.t = 0;
+    e.vy = Math.max(e.vy, 0) + (up || 3) + 4 + Math.random() * 4 * (heavy ? 1.5 : 1);
+    e.tumble = (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 8); e.tumbleA = 0;
+    e.spin = (Math.random() - 0.5) * 10; G.ko++; gainExp(def.exp || 1);
+    G.shake = Math.max(G.shake, heavy ? 0.35 : 0.2);
     e.face = Math.atan2(-dx, -dz);
     if (Math.random() < (e.type === 'brute' ? 0.4 : 0.06)) fx.orb(e.x, e.z);
   } else if (!def.armor || heavy) {
-    e.state = 'hit'; e.t = 0; e.vy = up ? up * 0.7 : e.vy;
+    e.state = 'hit'; e.t = 0; e.vy = Math.max(e.vy, (up ? up * 0.8 : 0) + (heavy ? 3.5 : 1.8));
   }
 }
 
@@ -918,8 +999,12 @@ function updateEnemies(dt) {
     const dx = hero.x - e.x, dz = hero.z - e.z, dist = Math.hypot(dx, dz);
     if (e.dead) {
       e.vy -= 22 * dt; e.y = Math.max(0, e.y + e.vy * dt);
-      if (e.y <= 0) { e.vy = 0; e.spin *= 0.8; }
+      if (e.y <= 0) {
+        if (e.vy < -6 && !e.bounced) { e.bounced = true; e.vy = -e.vy * 0.35; fx.mist(e.x, 0.2, e.z, 0, 0, 2); fx.decal(e.x, e.z, 1.4); }
+        else { e.vy = 0; e.spin *= 0.8; e.tumble = 0; }
+      }
       e.face += e.spin * dt;
+      e.tumbleA = (e.tumbleA || 0) + (e.tumble || 0) * dt;
       if (e.t > 2.2) e.y -= (e.t - 2.2) * 0.8 * dt * 4;
       if (e.t > 3.2) { enemies.splice(i, 1); continue; }
     } else {
@@ -989,7 +1074,9 @@ function updateEnemies(dt) {
     smoothPose(e.pose, target, Math.min(1, dt * (st === 'strike' ? 40 : 16)));
     const s = def.scale;
     _rootM.compose(_p.set(e.x, e.y, e.z), _q.setFromAxisAngle(UP, e.face), _s.set(s, s, s));
-    crowd.add(_rootM, e.pose, def.weapon, def.color);
+    // airborne corpses tumble end over end
+    const rp = e.dead && e.y > 0.05 && e.tumbleA ? { ...e.pose, rootPitch: (e.pose.rootPitch || 0) + e.tumbleA } : e.pose;
+    crowd.add(_rootM, rp, def.weapon, def.color);
   }
   crowd.end();
 }
