@@ -572,17 +572,25 @@ function startAction(name) {
 // light attack choice: running start -> thrust; during a combo the stick direction relative to
 // the hero picks a variation (back = rising launcher, side = diagonal cut); rage has its own chain
 // The combo grows with level: Lv2 adds a turning backhand, Lv4 a double thrust, Lv6 a leaping slam.
+// The combo grows with level (Lv2 turning backhand, Lv4 double thrust, Lv6 leaping slam). Each step is a
+// pool of moves; one is picked at random so strings of attacks vary, never repeating the previous move.
 function comboChain() {
   const lv = hero.level;
   if (hero.rageT > 0) {
-    return ['L1', 'RFLIP', 'L2', 'RSPIN2', ...(lv >= 3 ? ['L4'] : []), ...(lv >= 5 ? ['RFLIP'] : []), 'RLEAP'];
+    return [['L1', 'L1B'], ['RFLIP'], ['L2', 'XCUT'], ['RSPIN2'], ...(lv >= 3 ? [['L4', 'SPIN1']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
-  return ['L1', 'L2', 'L3', ...(lv >= 2 ? ['L4'] : []), ...(lv >= 4 ? ['L5'] : []), ...(lv >= 6 ? ['L6'] : [])];
+  return [['L1', 'L1B', 'VCUT'], ['L2', 'XCUT', 'SPIN1'], ['L3', 'VCUT', 'STAB'],
+    ...(lv >= 2 ? [['L4', 'SPIN1']] : []), ...(lv >= 4 ? [['L5', 'XCUT']] : []), ...(lv >= 6 ? [['L6']] : [])];
+}
+function pickFrom(pool, prev) {
+  const opts = pool.filter(n => n !== prev);
+  const list = opts.length ? opts : pool;
+  return list[Math.floor(Math.random() * list.length)];
 }
 function pickLight(prev) {
   const [mx, my] = input.move();
   const moving = Math.hypot(mx, my) > 0.3;
-  if (!prev) { hero.comboIdx = 0; hero.lightCount = 1; return moving ? 'DASH' : 'L1'; }
+  if (!prev) { hero.comboIdx = 0; hero.lightCount = 1; return moving ? 'DASH' : pickFrom(comboChain()[0], null); }
   hero.lightCount = (hero.lightCount || 0) + 1;
   if (moving) {
     const rel = Math.abs(angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face);
@@ -591,7 +599,7 @@ function pickLight(prev) {
   }
   const chain = comboChain();
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
-  return chain[hero.comboIdx];
+  return pickFrom(chain[hero.comboIdx], prev);
 }
 // heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
 const FINISHERS = { 1: 'UPPER', 2: 'FIN2', 3: 'RSPIN2', 4: 'L5', 5: 'RLEAP' };
@@ -809,7 +817,7 @@ function heroHits(a) {
   if (boss && !boss.dead && boss.state !== 'hidden' && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, 1.2, 0, 4)) {
     boss.lastHit = h.attackId; any = true; damageBoss(d.dmg * mult * 1.0);
   }
-  if (any) { G.hitstop = Math.max(G.hitstop, (a.name === 'SPIN_LOOP' || a.name === 'RSPIN2') ? 0.025 : 0.055); sfx.play('hit'); }
+  if (any) { G.hitstop = Math.max(G.hitstop, (a.name === 'SPIN_LOOP' || a.name === 'RSPIN2' || a.name === 'SPIN1' || a.name === 'L4') ? 0.025 : 0.055); sfx.play('hit'); }
 }
 
 function impact(a) {

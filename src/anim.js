@@ -229,8 +229,8 @@ export const HERO_ACTIONS = {
     dur: 0.8, active: [0.14, 0.6], chainAt: 0.62, dmg: 30, kb: 8, heavy: true, lunge: [0.14, 0.6, 4], sound: 'swingHeavy', type: 'sweep', multi: 2,
     keys: [
       [0, HERO.idle],
-      [0.14, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out'],
-      [0.6, { ...sweepArm(0.4, 0.2, 0.25), rootYaw: 0.18 + 2 * (2 * Math.PI), rootY: -0.25 }, 'lin'],
+      [0.14, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }, 'out'],
+      [0.6, { ...spinArm(0.2, -0.2), rootYaw: 0.18 + 2 * (2 * Math.PI) }, 'lin'],
       [0.8, { ...HERO.idle, rootYaw: 2 * (2 * Math.PI) }, 'io'],
     ],
   },
@@ -252,9 +252,9 @@ export const HERO_ACTIONS = {
   L4: {
     dur: 0.56, active: [0.08, 0.38], chainAt: 0.4, dmg: 30, kb: 7, heavy: true, lunge: [0.08, 0.38, 3.5], sound: 'swingHeavy', type: 'sweep',
     keys: [
-      [0, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.25 }],
-      [0.08, { ...sweepArm(-0.25, -0.65, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out'],
-      [0.38, { ...sweepArm(0.5, 0.3, 0.25), rootYaw: 0.18 + 2 * Math.PI, rootY: -0.25 }, 'lin'],
+      [0, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }],
+      [0.08, { ...spinArm(-0.25, -0.65), rootYaw: 0.18 }, 'out'],
+      [0.38, { ...spinArm(0.2, -0.2), rootYaw: 0.18 + 2 * Math.PI }, 'lin'],
       [0.56, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
     ],
   },
@@ -402,3 +402,41 @@ export function bossPose(state, t, phase, out) {
 HERO_ACTIONS.L6 = { ...HERO_ACTIONS.RLEAP, dmg: 50, radius: 3.8 };
 // heavy pressed after the 2nd light hit: a crushing overhead slam with a wide shockwave
 HERO_ACTIONS.FIN2 = { ...HERO_ACTIONS.L3, dmg: 52, radius: 3.8, kb: 9, up: 5 };
+
+// ---- random light-attack variants (picked per combo step) ----
+// rising diagonal: low on the right to high on the left
+HERO_ACTIONS.L1B = {
+  dur: 0.46, active: [0.1, 0.24], chainAt: 0.26, dmg: 24, kb: 5, up: 3, lunge: [0.04, 0.22, 5], sound: 'swing', type: 'sweep',
+  keys: [
+    [0, { ...sweepArm(0.2, -0.45, 0.2, -1.05), rootY: -0.3 }],
+    [0.1, { ...sweepArm(0.0, -0.5, 0.2, -1.05), rootY: -0.32 }, 'out'],
+    [0.24, { ...sweepArm(2.2, 0.6, -0.15, -2.3), rootYaw: 0.35, rootY: -0.05 }, 'out'],
+    [0.46, HERO.idle, 'io'],
+  ],
+};
+// straight vertical cut, fast, no shockwave
+HERO_ACTIONS.VCUT = {
+  dur: 0.5, active: [0.15, 0.25], chainAt: 0.28, dmg: 30, kb: 5, lunge: [0.05, 0.24, 5], sound: 'swing', type: 'sweep',
+  keys: [
+    [0, HERO.idle],
+    [0.14, HERO_ACTIONS.L3.keys[1][1], 'out'],
+    [0.25, { ...HERO_ACTIONS.L3.keys[2][1], handR: [0.3, 0, 0], rootY: -0.2 }, 'in'],
+    [0.5, HERO.idle, 'io'],
+  ],
+};
+// cross cut: two diagonals, right-high to left-low then left-high to right-low
+HERO_ACTIONS.XCUT = {
+  dur: 0.64, active: [0.1, 0.44], chainAt: 0.46, dmg: 22, kb: 4, multi: 2, lunge: [0.05, 0.4, 4], sound: 'swing', type: 'sweep',
+  keys: [
+    [0, { ...sweepArm(0.2, -0.5, -0.2, -2.3) }],
+    [0.1, { ...sweepArm(0.0, -0.55, -0.2, -2.4) }, 'out'],
+    [0.22, { ...sweepArm(1.6, 0.45, 0.15, -1.3), rootYaw: 0.25, rootY: -0.2 }, 'out'],
+    [0.32, { ...sweepArm(2.1, 0.55, -0.15, -2.3), rootYaw: 0.3 }, 'io'],
+    [0.44, { ...sweepArm(0.1, -0.45, 0.15, -1.3), rootYaw: -0.15, rootY: -0.2 }, 'out'],
+    [0.64, HERO.idle, 'io'],
+  ],
+};
+// quick level one-turn spin
+HERO_ACTIONS.SPIN1 = { ...HERO_ACTIONS.L4, dur: 0.48, chainAt: 0.36, lunge: [0.05, 0.3, 2.5], dmg: 26 };
+// planted thrust (no long lunge)
+HERO_ACTIONS.STAB = { ...HERO_ACTIONS.DASH, lunge: [0.08, 0.3, 4], dmg: 28 };
