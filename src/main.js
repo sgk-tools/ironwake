@@ -876,7 +876,9 @@ function hurtHero(dmg, fromX, fromZ) {
     G.slowmo = 0.35; setTimeout(() => endGame(false), 1800);
     return;
   }
-  if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) { if (h.act && h.act.name === 'CHARGE') h.mat.emissive.setRGB(0, 0, 0); startAction('HURT'); }
+  // charging the spin has super armour: damage is taken but the wind-up keeps going
+  if (h.act && h.act.name === 'CHARGE') { G.shake = Math.max(G.shake, 0.25); return; }
+  if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) startAction('HURT');
 }
 
 // ======================================================================= enemy logic
