@@ -77,9 +77,11 @@ function jsonToGlb(json) {
   dv.setUint32(o, bLen, true); dv.setUint32(o + 4, 0x004E4942, true); out.set(bin, o + 8);
   return out.buffer;
 }
+// cache-busting version (set by the public build) so updated assets are not served from a stale cache
+const AV = window.ASSET_V ? `?v=${window.ASSET_V}` : '';
 const loadG = (n) => {
   manager.itemStart(n);
-  return fetch(`assets/${n}.gltf.json`)
+  return fetch(`assets/${n}.gltf.json${AV}`)
     .then(r => { if (!r.ok) throw new Error(`${n}: HTTP ${r.status}`); return r.json(); })
     .then(j => new Promise((res, rej) => {
       // GLTFLoader decodes embedded images with fetch(blob:) when createImageBitmap exists; the viewer's
@@ -90,13 +92,13 @@ const loadG = (n) => {
     }))
     .finally(() => manager.itemEnd(n));
 };
-const loadT = (n) => new Promise((res, rej) => texLoader.load(`assets/${n}`, res, undefined, rej));
+const loadT = (n) => new Promise((res, rej) => texLoader.load(`assets/${n}${AV}`, res, undefined, rej));
 
 let A = null;
 async function loadAll() {
   const [hero, grunt, boss, sword, weapons, props, skel, gcol, gnrm, grough, sky] = await Promise.all([
     loadG('hero'), loadG('grunt'), loadG('boss'), loadG('sword'), loadG('weapons'), loadG('props'),
-    fetch('assets/skeleton.json').then(r => r.json()),
+    fetch(`assets/skeleton.json${AV}`).then(r => r.json()),
     loadT('ground_col.jpg'), loadT('ground_nrm.jpg'), loadT('ground_rough.jpg'), loadT('sky.jpg'),
   ]);
   const parts = (g) => { const o = {}; g.scene.traverse(c => { if (c.isMesh) o[c.name] = c; }); return o; };
