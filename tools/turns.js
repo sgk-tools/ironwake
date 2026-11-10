@@ -33,7 +33,7 @@ const { chromium } = require('playwright');
     return { seq: log.join(' > '), pauses: pauses.join(', ') || 'none' };
   }, [setup, ms]);
   await p.evaluate(() => { window.__game.G.substeps = 1; });
-  console.log('heavy spin x4:', JSON.stringify(await rec("h.act = null; h.spinTarget = 4; h.chargeMul = 1; h.spinLoops = 0; g.startAction('SPIN_IN');", 30000)));
+  console.log('heavy spin (single turn):', JSON.stringify(await rec("h.act = null; h.spinTarget = 1; h.chargeMul = 1; h.spinLoops = 0; g.startAction('SPIN_IN');", 30000)));
   for (const n of ['L4', 'SPIN1', 'REVSPIN', 'RSPIN2', 'RFLIP', 'WHEEL']) console.log(n.padEnd(8), JSON.stringify(await rec(`h.act = null; g.startAction('${n}');`, 6000)));
   // single-hit knockback distance to landing
   const kb = await p.evaluate(async () => {
@@ -53,7 +53,7 @@ const { chromium } = require('playwright');
     };
     out.L1_normal = await trial('L1');
     out.SPIN1_lightSpin = await trial('SPIN1');
-    out.SPIN_IN_heavy = await trial('SPIN_IN', () => { h.spinTarget = 1; h.chargeMul = 1; h.spinLoops = 0; });
+    for (const lv of [0, 1, 2, 3]) out['heavy_charge' + lv] = await trial('SPIN_IN', () => { h.spinTarget = 1; h.chargeLv = lv; h.chargeMul = 1 + 0.25 * lv; h.spinLoops = 0; });
     return out;
   });
   console.log('knockback distance hit->landing (m):', JSON.stringify(kb));

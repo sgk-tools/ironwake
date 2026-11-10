@@ -164,7 +164,7 @@ class Crowd {
     this.world = this.joints.map(() => new THREE.Matrix4());
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler();
     this._s = new THREE.Vector3(1, 1, 1); this._p = new THREE.Vector3();
-    this.wOff = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+    this.wOff = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(Math.PI / 2, Math.PI / 2, 0));   // edge leads, as for the hero
     this.wOff.setPosition(0, -0.085, 0.0);
     this.handR = this.joints.indexOf('handR');
   }
@@ -603,7 +603,9 @@ function makeHero() {
   rig.root.traverse(o => { if (o.isMesh) o.material = mat; });
   const sw = new THREE.Mesh(A.sword.sword.geometry, A.sword.sword.material);
   sw.castShadow = true;
-  sw.rotation.x = Math.PI / 2; sw.position.set(0, -0.085, 0.0);
+  // grip mount: blade forward from the fist, turned 90 deg about its own length so the edge (not the flat)
+  // leads in the swings
+  sw.rotation.set(Math.PI / 2, Math.PI / 2, 0); sw.position.set(0, -0.085, 0.0);
   rig.j.handR.add(sw);
   // optional extra weapons (src/extra-weapons.js): mounted in the same grip, shown when selected
   const weapons = { standard: { mesh: sw, blade: STANDARD_BLADE } };
@@ -928,7 +930,7 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 function heroHits(a) {
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
   const turn = Boolean(TURN_AXIS[a.name]);
-  const knockback = d.kb * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB * (1 + 0.1 * (h.chargeLv || 0)) : 1);
+  const knockback = d.kb * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB * (1 + 0.05 * (h.chargeLv || 0)) : 1);
   const bonusLift = turn ? 1.5 : 0;
   let any = false;
   const bodyHit = (x, z, r) => {
@@ -1506,7 +1508,7 @@ async function boot() {
     sel.value = 'standard'; $('.weapon-choice').hidden = EXTRA_WEAPONS.length === 0; }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));

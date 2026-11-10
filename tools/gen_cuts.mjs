@@ -82,21 +82,30 @@ function solveSeq(seq, mirrorX = false, steps = 4) {
     return { t, e: e || 'io', b: bb, h, d: tp.clone().sub(h), len: tp.distanceTo(h), extra };
   });
   let prev = null; const out = []; const errs = [];
-  const emit = (t, b, h, d, len, e, extra) => {
-    const s = solve(b, { hilt: h, tip: h.clone().add(d.clone().normalize().multiplyScalar(len)), prev }, prev);
+  let prevTip = null;
+  const emit = (t, b, h, d, len, e, extra, nextTip) => {
+    const tip = h.clone().add(d.clone().normalize().multiplyScalar(len));
+    // direction of travel of the blade around this sample (forward difference, else backward)
+    const ref = nextTip || (prevTip ? tip.clone().add(tip.clone().sub(prevTip)) : null);
+    const motion = ref && ref.distanceTo(tip) > 0.05 ? ref.clone().sub(tip).normalize() : null;
+    const s = solve(b, { hilt: h, tip, prev, motion }, prev);
+    prevTip = tip;
     prev = s.pose; errs.push(s.err.tip);
     const p = {};
     for (const [k, v] of Object.entries(s.pose)) p[k] = Array.isArray(v) ? v.map(x => +x.toFixed(3)) : +(+v).toFixed(3);
     out.push([+t.toFixed(4), p, e, extra || null]);
   };
-  emit(W[0].t, W[0].b, W[0].h, W[0].d, W[0].len, null, W[0].extra);
+  // build all samples first so each one knows where the tip goes next
+  const S = [{ t: W[0].t, b: W[0].b, h: W[0].h, d: W[0].d, len: W[0].len, e: null, extra: W[0].extra }];
   for (let i = 1; i < W.length; i++) {
     const A = W[i - 1], B = W[i];
     for (let k = 1; k <= steps; k++) {
       const u = k / steps, ue = ease[B.e](u);
-      emit(A.t + (B.t - A.t) * u, lerpBody(A.b, B.b, ue), A.h.clone().lerp(B.h, ue), dirLerp(A.d, B.d, ue), A.len + (B.len - A.len) * ue, 'lin', B.extra);
+      S.push({ t: A.t + (B.t - A.t) * u, b: lerpBody(A.b, B.b, ue), h: A.h.clone().lerp(B.h, ue), d: dirLerp(A.d, B.d, ue), len: A.len + (B.len - A.len) * ue, e: 'lin', extra: B.extra });
     }
   }
+  const tipOf = (q) => q.h.clone().add(q.d.clone().normalize().multiplyScalar(q.len));
+  S.forEach((q, i) => emit(q.t, q.b, q.h, q.d, q.len, q.e, q.extra, S[i + 1] ? tipOf(S[i + 1]) : null));
   return { keys: out, maxTipErr: Math.max(...errs) };
 }
 
@@ -110,8 +119,18 @@ add('HIGH_L_LOW_R', HIGH_R_TO_LOW_L, true);
 add('LOW_R_HIGH_L', LOW_R_TO_HIGH_L);
 add('LOW_L_HIGH_R', LOW_R_TO_HIGH_L, true);
 add('LOW_SWEEP', LOW_SWEEP);
-add('SPIN', [[0, null, spinBody, SPIN_HILT, SPIN_TIP]]);
-add('SPIN_REV', [[0, null, spinBody, SPIN_HILT, SPIN_TIP]], true);
+// spin reach: the edge must lead along the turn, i.e. the blade face normal is perpendicular to the
+// rotation tangent at the tip (turn +yaw: tangent = (z, 0, -x); turn -yaw: the opposite)
+const spinSolve = (name, sign) => {
+  const h = sign > 0 ? SPIN_HILT : mirror(SPIN_HILT), tp = sign > 0 ? SPIN_TIP : mirror(SPIN_TIP);
+  const b = sign > 0 ? spinBody : { ...spinBody, pelvis: [spinBody.pelvis[0], -spinBody.pelvis[1], 0], torso: [spinBody.torso[0], -spinBody.torso[1], 0], head: [spinBody.head[0], -spinBody.head[1], 0], cloak: [spinBody.cloak[0], 0, -spinBody.cloak[2]] };
+  const motion = V(tp.z, 0, -tp.x).multiplyScalar(sign).normalize();
+  const s = solve(b, { hilt: h, tip: tp, motion });
+  const p = {}; for (const [k, v] of Object.entries(s.pose)) p[k] = Array.isArray(v) ? v.map(x => +x.toFixed(3)) : +(+v).toFixed(3);
+  R[name] = [[0, p, null, null]]; report.push(`${name}: tip error ${s.err.tip} m`);
+};
+spinSolve('SPIN', 1);
+spinSolve('SPIN_REV', -1);
 // heavy release: from the wind-up behind the hip, the blade swings out low then rises to the spin line
 add('RELEASE', [
   [0.06, 'out', body(-0.55, 0.25, stanceLunge), V(-0.55, 0.95, -0.35), V(-1.85, 0.75, -1.35)],

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 const SKEL = JSON.parse(fs.readFileSync(new URL('../assets/skeleton.json', import.meta.url)));
 const ORDER = { uarmR: 'YZX', uarmL: 'YZX', torso: 'YXZ', pelvis: 'YXZ', handR: 'YZX', handL: 'YZX' };
 const PIVOT = 0.55;
-const MOUNT = new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(0, -0.085, 0);
+const MOUNT = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(Math.PI / 2, Math.PI / 2, 0)).setPosition(0, -0.085, 0);
 const HILT = new THREE.Vector3(0, 0.45, 0), TIP = new THREE.Vector3(0, 2.1, 0), GRIP2 = new THREE.Vector3(0, -0.24, 0);
 
 function local(name, rot) {
@@ -32,6 +32,7 @@ export function fk(pose) {
   return {
     hilt: HILT.clone().applyMatrix4(sw), tip: TIP.clone().applyMatrix4(sw), grip2: GRIP2.clone().applyMatrix4(sw),
     handL: new THREE.Vector3(0, -0.06, 0).applyMatrix4(handL), elbowR: new THREE.Vector3().setFromMatrixPosition(chain('farmR')),
+    normal: new THREE.Vector3(0, 0, 1).transformDirection(sw),   // blade face normal (thickness axis)
   };
 }
 
@@ -39,7 +40,7 @@ export function fk(pose) {
 const VARS = [
   ['uarmR', 0, -3.1, 1.0], ['uarmR', 1, -1.6, 2.6], ['uarmR', 2, -2.4, 0.3],
   ['farmR', 0, -2.3, -0.12],
-  ['handR', 0, -0.6, 3.4], ['handR', 2, -0.9, 0.9],
+  ['handR', 0, -0.6, 3.4], ['handR', 1, -1.7, 1.7], ['handR', 2, -0.9, 0.9],
   ['uarmL', 0, -3.0, 1.0], ['uarmL', 1, -1.6, 1.6], ['uarmL', 2, -0.4, 2.0],
   ['farmL', 0, -2.3, -0.1],
 ];
@@ -50,6 +51,7 @@ function cost(pose, tgt) {
   const bend = -pose.farmR[0];
   c += 0.02 * Math.max(0, 0.35 - bend) ** 2;                                  // avoid a locked-straight elbow
   if (tgt.elbowBend !== undefined) c += 0.4 * (bend - tgt.elbowBend) ** 2;
+  if (tgt.motion) c += 0.8 * r.normal.dot(tgt.motion) ** 2;                  // lead with the edge, not the flat
   if (tgt.prev) for (const [j, i] of VARS) c += 0.015 * (pose[j][i] - tgt.prev[j][i]) ** 2;   // continuity
   return c;
 }
