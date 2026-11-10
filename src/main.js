@@ -577,10 +577,10 @@ function startAction(name) {
 function comboChain() {
   const lv = hero.level;
   if (hero.rageT > 0) {
-    return [['L1', 'L1B'], ['RFLIP'], ['L2', 'XCUT'], ['RSPIN2'], ...(lv >= 3 ? [['L4', 'SPIN1']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+    return [['L1', 'L1B', 'LOWSWEEP'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN'], ['RSPIN2'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
-  return [['L1', 'L1B', 'VCUT'], ['L2', 'XCUT', 'SPIN1'], ['L3', 'VCUT', 'STAB'],
-    ...(lv >= 2 ? [['L4', 'SPIN1']] : []), ...(lv >= 4 ? [['L5', 'XCUT']] : []), ...(lv >= 6 ? [['L6']] : [])];
+  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL'],
+    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP']] : []), ...(lv >= 6 ? [['L6']] : [])];
 }
 function pickFrom(pool, prev) {
   const opts = pool.filter(n => n !== prev);
@@ -806,9 +806,15 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 function heroHits(a) {
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
   let any = false;
+  const bodyHit = (x, z, r) => {
+    if (!d.body) return false;
+    const dx = x - h.x, dz = z - h.z, dist = Math.hypot(dx, dz);
+    return dist < d.body + r && Math.abs(angLerp(h.face, Math.atan2(dx, dz), 1) - h.face) < 1.1;
+  };
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
     const def = ENEMY[e.type];
+    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult, d.kb, d.up || 0, true); continue; }
     if (bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
       damageEnemy(e, d.dmg * mult, d.kb, d.up || 0, !!d.heavy);
@@ -862,7 +868,7 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
   }
 }
 
-const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2']);
+const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2', 'REVSPIN']);
 function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;

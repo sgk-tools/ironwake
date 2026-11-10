@@ -440,3 +440,47 @@ HERO_ACTIONS.XCUT = {
 HERO_ACTIONS.SPIN1 = { ...HERO_ACTIONS.L4, dur: 0.48, chainAt: 0.36, lunge: [0.05, 0.3, 2.5], dmg: 26 };
 // planted thrust (no long lunge)
 HERO_ACTIONS.STAB = { ...HERO_ACTIONS.DASH, lunge: [0.08, 0.3, 4], dmg: 28 };
+
+// ---- more random variants ----
+// low sweep at shin height from a deep crouch; trips enemies into the air
+HERO_ACTIONS.LOWSWEEP = {
+  dur: 0.5, active: [0.1, 0.27], chainAt: 0.3, dmg: 24, kb: 3, up: 4, lunge: [0.04, 0.22, 3], sound: 'swing', type: 'sweep',
+  keys: [
+    [0, { ...spinArm(0.1, -0.5, -0.55), torso: [0.35, -0.3, 0], thighR: [-0.9, 0, -0.2], shinR: [1.5, 0, 0], thighL: [0.2, 0, 0.3], shinL: [1.1, 0, 0] }],
+    [0.1, { ...spinArm(-0.1, -0.55, -0.55), torso: [0.35, -0.33, 0], thighR: [-0.9, 0, -0.2], shinR: [1.5, 0, 0], thighL: [0.2, 0, 0.3], shinL: [1.1, 0, 0] }, 'out'],
+    [0.27, { ...spinArm(2.3, 0.6, -0.55), torso: [0.35, 0.36, 0], thighR: [-0.9, 0, -0.2], shinR: [1.5, 0, 0], thighL: [0.2, 0, 0.3], shinL: [1.1, 0, 0], rootYaw: 0.4 }, 'out'],
+    [0.5, HERO.idle, 'io'],
+  ],
+};
+// counter-rotating level spin (turns the other way)
+HERO_ACTIONS.REVSPIN = {
+  dur: 0.52, active: [0.08, 0.36], chainAt: 0.38, dmg: 28, kb: 7, heavy: true, lunge: [0.08, 0.36, 3], sound: 'swingHeavy', type: 'sweep',
+  keys: [
+    [0, { ...spinArm(1.6, 0.5), rootYaw: -0.2 }],
+    [0.08, { ...spinArm(1.7, 0.55), rootYaw: -0.2 }, 'out'],
+    [0.36, { ...spinArm(1.2, 0.2), rootYaw: -0.2 - 2 * Math.PI }, 'lin'],
+    [0.52, { ...HERO.idle, rootYaw: -2 * Math.PI }, 'io'],
+  ],
+};
+// retreating cut: steps back while sweeping across the front
+HERO_ACTIONS.BACKCUT = {
+  ...HERO_ACTIONS.L1, dmg: 24, lunge: [0.02, 0.3, -6],
+  keys: HERO_ACTIONS.L1.keys.map(([t, p, e]) => [t, { ...p, torso: [-(p.torso ? 0.15 : 0), (p.torso || [0, 0, 0])[1], 0], cloak: [0.9, 0, 0] }, e]),
+};
+// shoulder charge: sword held low behind, the body does the hitting
+HERO_ACTIONS.SHOULDER = {
+  dur: 0.5, active: [0.08, 0.3], chainAt: 0.32, dmg: 20, kb: 12, up: 2, body: 1.5, lunge: [0.05, 0.3, 12], sound: 'swing', type: 'thrust',
+  keys: [
+    [0, HERO.idle],
+    [0.08, { pelvis: [0, 1.0, 0], torso: [0.45, 0.4, 0], head: [0, -1.0, 0], uarmR: [0.45, 0, -0.25], farmR: [-0.35, 0, 0], handR: [2.45, 0, 0],
+      uarmL: [-0.9, 0.6, 0.6], farmL: [-1.6, 0, 0], thighR: [-0.9, 0, 0], shinR: [0.8, 0, 0], thighL: [0.5, 0, 0], shinL: [0.6, 0, 0], cloak: [1.2, 0, 0], rootY: -0.25 }, 'out'],
+    [0.3, { pelvis: [0, 1.0, 0], torso: [0.5, 0.4, 0], head: [0, -1.0, 0], uarmR: [0.45, 0, -0.25], farmR: [-0.35, 0, 0], handR: [2.45, 0, 0],
+      uarmL: [-0.9, 0.6, 0.6], farmL: [-1.6, 0, 0], thighR: [0.4, 0, 0], shinR: [0.4, 0, 0], thighL: [-0.8, 0, 0], shinL: [0.7, 0, 0], cloak: [1.3, 0, 0], rootY: -0.3 }],
+    [0.5, HERO.idle, 'io'],
+  ],
+};
+// cartwheel cut: a smaller forward somersault with the blade wheeling in front (available without rage)
+HERO_ACTIONS.WHEEL = {
+  ...HERO_ACTIONS.RFLIP, dmg: 30, up: 3,
+  keys: HERO_ACTIONS.RFLIP.keys.map(([t, p, e]) => [t, { ...p, rootY: p.rootY > 0.5 ? 0.55 : p.rootY }, e]),
+};
