@@ -151,8 +151,8 @@ export const HERO_ACTIONS = {
     dur: 0.78, active: [0.2, 0.52], chainAt: 0.62, dmg: 36, kb: 9, lunge: [0.2, 0.5, 3], sound: 'swingHeavy', type: 'sweep',
     keys: [
       [0, HERO.idle],
-      [0.18, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out'],
-      [0.52, { ...sweepArm(0.6, 0.3, 0.25), rootYaw: 5.36, rootY: -0.25 }, 'lin'],
+      [0.2, { ...sweepArm(-0.2, -0.6, 0.3), rootY: -0.3 }, 'out'],
+      [0.52, { ...sweepArm(0.6, 0.3, 0.25), rootYaw: 2 * Math.PI, rootY: -0.25 }, 'lin'],
       [0.78, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
     ],
   },
@@ -195,20 +195,20 @@ export const HERO_ACTIONS = {
   // charge: hold heavy to wind up (blade dragged low behind), release to unleash the spin
   CHARGE: {
     dur: 99,
-    keys: [[0, HERO.idle], [0.25, { ...spinArm(-0.6, -0.9, -0.4), torso: [0.25, -0.75, 0], uarmL: [-0.4, 0, 0.9], farmL: [-0.6, 0, 0], thighR: [-0.6, 0, -0.2], shinR: [0.9, 0, 0], thighL: [0.3, 0, 0.25], shinL: [0.6, 0, 0], cloak: [0.4, 0, 0.2], rootYaw: 0.18 }, 'out']],
+    keys: [[0, HERO.idle], [0.25, { ...spinArm(-0.6, -0.9, -0.4), torso: [0.25, -0.75, 0], uarmL: [-0.4, 0, 0.9], farmL: [-0.6, 0, 0], thighR: [-0.6, 0, -0.2], shinR: [0.9, 0, 0], thighL: [0.3, 0, 0.25], shinL: [0.6, 0, 0], cloak: [0.4, 0, 0.2], rootYaw: 0 }, 'out']],
   },
   SPIN_IN: {
     dur: 0.1, active: [-1, -1], chainAt: 99, type: 'spin',
-    keys: [[0, { ...spinArm(-0.6, -0.9, -0.4), rootYaw: 0.18 }], [0.1, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }, 'out']],
+    keys: [[0, { ...spinArm(-0.6, -0.9, -0.4), rootYaw: 0 }], [0.1, { ...spinArm(-0.2, -0.6), rootYaw: 0 }, 'out']],
   },
   SPIN_LOOP: {
     dur: 0.3, active: [0.0, 0.3], chainAt: 99, dmg: 24, kb: 7, heavy: true, sound: 'swingHeavy', type: 'sweep',
-    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }],
-      [0.3, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 + (2 * Math.PI) }, 'lin']],
+    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0 }],
+      [0.3, { ...spinArm(-0.2, -0.6), rootYaw: 2 * Math.PI }, 'lin']],
   },
   SPIN_OUT: {
     dur: 0.36, active: [-1, -1], chainAt: 0.2, type: 'spin',
-    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }], [0.36, HERO.idle, 'io']],
+    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0 }], [0.36, HERO.idle, 'io']],
   },
   // ---- rage-only moves ----
   // vertical somersault cut: the blade wheels through a full vertical circle in front
@@ -225,14 +225,14 @@ export const HERO_ACTIONS = {
       [0.74, { ...HERO.idle, rootPitch: (2 * Math.PI) }, 'io'],
     ],
   },
-  // double horizontal spin
+  // awakened horizontal spin
   RSPIN2: {
     dur: 0.8, active: [0.14, 0.6], chainAt: 0.62, dmg: 30, kb: 8, heavy: true, lunge: [0.14, 0.6, 4], sound: 'swingHeavy', type: 'sweep', multi: 2,
     keys: [
       [0, HERO.idle],
-      [0.14, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }, 'out'],
-      [0.6, { ...spinArm(0.2, -0.2), rootYaw: 0.18 + 2 * (2 * Math.PI) }, 'lin'],
-      [0.8, { ...HERO.idle, rootYaw: 2 * (2 * Math.PI) }, 'io'],
+      [0.14, { ...spinArm(-0.2, -0.6), rootYaw: 0 }, 'out'],
+      [0.6, { ...spinArm(0.2, -0.2), rootYaw: 2 * Math.PI }, 'lin'],
+      [0.8, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
     ],
   },
   // leaping overhead slam with a wide shockwave
@@ -253,9 +253,9 @@ export const HERO_ACTIONS = {
   L4: {
     dur: 0.56, active: [0.08, 0.38], chainAt: 0.4, dmg: 30, kb: 7, heavy: true, lunge: [0.08, 0.38, 3.5], sound: 'swingHeavy', type: 'sweep',
     keys: [
-      [0, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }],
-      [0.08, { ...spinArm(-0.25, -0.65), rootYaw: 0.18 }, 'out'],
-      [0.38, { ...spinArm(0.2, -0.2), rootYaw: 0.18 + 2 * Math.PI }, 'lin'],
+      [0, { ...spinArm(-0.2, -0.6), rootYaw: 0 }],
+      [0.08, { ...spinArm(-0.25, -0.65), rootYaw: 0 }, 'out'],
+      [0.38, { ...spinArm(0.2, -0.2), rootYaw: 2 * Math.PI }, 'lin'],
       [0.56, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
     ],
   },
@@ -457,9 +457,9 @@ HERO_ACTIONS.LOWSWEEP = {
 HERO_ACTIONS.REVSPIN = {
   dur: 0.52, active: [0.08, 0.36], chainAt: 0.38, dmg: 28, kb: 7, heavy: true, lunge: [0.08, 0.36, 3], sound: 'swingHeavy', type: 'sweep',
   keys: [
-    [0, { ...spinArm(1.6, 0.5), rootYaw: -0.2 }],
-    [0.08, { ...spinArm(1.7, 0.55), rootYaw: -0.2 }, 'out'],
-    [0.36, { ...spinArm(1.2, 0.2), rootYaw: -0.2 - 2 * Math.PI }, 'lin'],
+    [0, { ...spinArm(1.6, 0.5), rootYaw: 0 }],
+    [0.08, { ...spinArm(1.7, 0.55), rootYaw: 0 }, 'out'],
+    [0.36, { ...spinArm(1.2, 0.2), rootYaw: -2 * Math.PI }, 'lin'],
     [0.52, { ...HERO.idle, rootYaw: -2 * Math.PI }, 'io'],
   ],
 };
@@ -494,14 +494,14 @@ const PLANT = {
   uarmL: [-1.6, 0, 0.12], farmL: [-0.85, 0, 0],
   thighR: [-0.2, 0, -0.2], shinR: [0.3, 0, 0], thighL: [0.1, 0, 0.2], shinL: [0.2, 0, 0], cloak: [0.5, 0, 0], rootY: 0.0,
 };
-// planted-sword whirl: grip the grounded blade and swing the whole body around it twice, legs flung out
+// planted-sword whirl: grip the grounded blade and swing the whole body around it, legs flung out
 HERO_ACTIONS.PIVOT = {
   dur: 0.95, active: [0.16, 0.72], chainAt: 0.74, dmg: 26, kb: 10, up: 3, body: 1.9, bodyAll: true, multi: 2, ground: true, sound: 'swingHeavy', type: 'thrust',
   keys: [
     [0, HERO.idle],
     [0.14, { ...PLANT, rootY: 0.0 }, 'out'],
-    [0.72, { ...PLANT, torso: [0.6, 0, 0], thighR: [-0.4, 0, -1.2], shinR: [0.2, 0, 0], thighL: [0.0, 0, 1.0], shinL: [0.3, 0, 0], cloak: [1.3, 0, 0.6], rootY: 0.05, rootYaw: 4 * Math.PI }, 'lin'],
-    [0.95, { ...HERO.idle, rootYaw: 4 * Math.PI }, 'io'],
+    [0.72, { ...PLANT, torso: [0.6, 0, 0], thighR: [-0.4, 0, -1.2], shinR: [0.2, 0, 0], thighL: [0.0, 0, 1.0], shinL: [0.3, 0, 0], cloak: [1.3, 0, 0.6], rootY: 0.05, rootYaw: 2 * Math.PI }, 'lin'],
+    [0.95, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
   ],
 };
 // pole vault: plant the blade, vault high over it and come down in an overhead slam

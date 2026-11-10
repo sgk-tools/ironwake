@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
+import { EXTRA_WEAPONS } from './extra-weapons.js';
 import { JOINTS, ORDER, HERO, HERO_ACTIONS, heroRun, sampleKeys, smoothPose, lerpPose, gruntPose, bossPose } from './anim.js';
 
 // ======================================================================= setup
@@ -599,9 +600,18 @@ function makeHero() {
   sw.castShadow = true;
   sw.rotation.x = Math.PI / 2; sw.position.set(0, -0.085, 0.0);
   rig.j.handR.add(sw);
+  // optional extra weapons (src/extra-weapons.js): mounted in the same grip, shown when selected
+  const weapons = { standard: { mesh: sw, blade: STANDARD_BLADE } };
+  for (const w of EXTRA_WEAPONS) {
+    const mesh = w.make();
+    mesh.position.copy(sw.position); mesh.rotation.copy(sw.rotation); mesh.visible = false;
+    rig.j.handR.add(mesh);
+    weapons[w.id] = { mesh, blade: w.blade };
+  }
   scene.add(rig.root);
   return {
-    rig, mat, sword: sw, x: 0, z: 0, vx: 0, vz: 0, face: 0, hp: 1000, maxHp: 1000, hpLag: 1000,
+    rig, mat, sword: sw, weapons, blade: STANDARD_BLADE,
+    x: 0, z: 0, vx: 0, vz: 0, face: 0, hp: 1000, maxHp: 1000, hpLag: 1000,
     rage: 0, rageT: 0, act: null, queued: null, iframe: 0, phase: 0, speedAmt: 0, pose: {}, target: {},
     lastBase: new THREE.Vector3(), lastTip: new THREE.Vector3(), base: new THREE.Vector3(), tip: new THREE.Vector3(),
     attackId: 0, dead: false, level: 1, exp: 0, comboIdx: 0, spinLoops: 0,
@@ -622,7 +632,11 @@ function makeBoss() {
 
 // ======================================================================= hero logic
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
-const SWORD_HILT = new THREE.Vector3(0, 0.45, 0), SWORD_BASE = new THREE.Vector3(0, 1.15, 0), SWORD_TIP = new THREE.Vector3(0, 2.1, 0);
+const STANDARD_BLADE = {
+  hilt: new THREE.Vector3(0, 0.45, 0),
+  trail: new THREE.Vector3(0, 1.15, 0),
+  tip: new THREE.Vector3(0, 2.1, 0),
+};
 
 function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
@@ -715,6 +729,13 @@ function wrapAng(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Ma
 
 function rageMult() { return hero.rageT > 0 ? 1.35 : 1; }
 
+const TURN_AXIS = {
+  SPIN: 'rootYaw', SPIN_LOOP: 'rootYaw', L4: 'rootYaw', SPIN1: 'rootYaw',
+  REVSPIN: 'rootYaw', RSPIN2: 'rootYaw', PIVOT: 'rootYaw',
+  RFLIP: 'rootPitch', WHEEL: 'rootPitch',
+};
+const TURN_HOLD_SECONDS = 0.12;
+
 function updateHero(dt) {
   const h = hero;
   if (h.dead) {
@@ -732,14 +753,15 @@ function updateHero(dt) {
     if (h.rageT <= 0) { h.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0; }
   }
   // input
-  if (input.consume('rage') && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
+  const holdingTurn = h.act?.turnHold > 0;
+  if (input.consume('rage') && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
     h.rage = 0; h.rageT = 12; startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
   const wantAttack = input.consume('attack') || (input.held.has('attack') && !h.act);
   const wantHeavy = input.consume('heavy');
   const wantDodge = input.consume('dodge');
   const act = h.act;
-  if (wantDodge && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
+  if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
     if (wantHeavy) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
     else if (wantAttack) startAction(pickLight(null));
@@ -755,23 +777,37 @@ function updateHero(dt) {
   const speedK = rageMult();
   const [mx, my] = input.move();
   let moving = Math.hypot(mx, my);
+  let turnAxis;
+  let beginTurnHold = false;
   if (h.act) {
     const a = h.act, d = a.def;
-    a.t += dt * (d.type ? speedK : 1);
+    turnAxis = TURN_AXIS[a.name];
+    if (holdingTurn) a.turnHold = Math.max(0, a.turnHold - dt);
+    else {
+      a.t += dt * (d.type ? speedK : 1);
+      const finalTurn = a.name !== 'SPIN_LOOP' || h.spinLoops + 1 >= (h.spinTarget || 1);
+      if (turnAxis && finalTurn && !a.turnHeld && a.t >= d.active[1]) {
+        a.t = d.active[1];
+        a.turnHeld = beginTurnHold = true;
+        a.turnHold = TURN_HOLD_SECONDS;
+      }
+    }
     sampleKeys(d.keys, a.t, h.target);
-    if (d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
+    if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
       h.x += Math.sin(h.face) * sp * dt * (d.type ? speedK : 1);
       h.z += Math.cos(h.face) * sp * dt * (d.type ? speedK : 1);
     }
     if (d.sound && !a.swung && a.t >= d.active[0] - 0.06) { a.swung = true; sfx.play(d.sound); }
     if (d.multi && !a.multiDone && a.t > (d.active[0] + d.active[1]) / 2) { a.multiDone = true; h.attackId++; }
-    if (a.name === 'SPIN_LOOP') {
+    if (a.name === 'SPIN_LOOP' && !holdingTurn && !beginTurnHold) {
       // steer while spinning
       if (moving > 0.2) { const tf = Math.atan2(-mx, my); h.x += Math.sin(tf) * 3.5 * dt; h.z += Math.cos(tf) * 3.5 * dt; }
     }
-    if (a.name === 'CHARGE') {
-      // hold to build up to 3 charge levels, release to spin; more turns and damage per level
+    if (holdingTurn || beginTurnHold) {
+      // Retain the final turn pose before allowing recovery or a queued attack.
+    } else if (a.name === 'CHARGE') {
+      // Charge, rage and level set the number of complete revolutions on release.
       h.charge += dt;
       const lv = h.charge >= 2.0 ? 3 : h.charge >= 1.2 ? 2 : h.charge >= 0.5 ? 1 : 0;
       if (lv > h.chargeLv) {
@@ -788,11 +824,9 @@ function updateHero(dt) {
       }
     } else if (a.name === 'SPIN_IN' && a.t >= d.dur) startAction('SPIN_LOOP');
     else if (a.name === 'SPIN_LOOP' && a.t >= d.dur) {
-      // one rotation per loop; the number of turns was fixed when the charge was released
-      h.pose.rootYaw -= Math.PI * 2;
-      h.spinLoops = (h.spinLoops || 0) + 1;
-      if (h.spinLoops < (h.spinTarget || 1)) startAction('SPIN_LOOP');
-      else startAction('SPIN_OUT');
+      h.pose.rootYaw = h.target.rootYaw = 0;
+      h.spinLoops++;
+      startAction(h.spinLoops < (h.spinTarget || 1) ? 'SPIN_LOOP' : 'SPIN_OUT');
     } else if (d.type && a.t >= d.chainAt && a.queued) {
       if (a.queued === 'heavy') {
         // heavy mid-combo: a finisher that depends on how many light hits came before
@@ -824,23 +858,24 @@ function updateHero(dt) {
     if (h.speedAmt < 0.5) { h.target.torso[0] += Math.sin(G.time * 2) * 0.02; }
   }
   // collisions
-  pushOut(h, 0.45);
+  if (!holdingTurn && !beginTurnHold) pushOut(h, 0.45);
   const r = Math.hypot(h.x, h.z); if (r > ARENA) { h.x *= ARENA / r; h.z *= ARENA / r; }
 
-  smoothPose(h.pose, h.target, Math.min(1, dt * 30));
+  if (!holdingTurn) smoothPose(h.pose, h.target, Math.min(1, dt * 30));
+  if (turnAxis && h.act) h.pose[turnAxis] = h.target[turnAxis] || 0;
   applyPose(h.rig, h.pose);
   h.rig.root.position.set(h.x, 0, h.z);
   h.rig.root.rotation.y = h.face;
   h.rig.root.updateMatrixWorld(true);
   // blade segment in world space
   h.lastBase.copy(h.base); h.lastTip.copy(h.tip);
-  h.base.copy(SWORD_HILT); h.sword.localToWorld(h.base);
-  h.tip.copy(SWORD_TIP); h.sword.localToWorld(h.tip);
-  const a = h.act, attacking = a && a.def.type && a.t >= a.def.active[0] - 0.05 && a.t <= a.def.active[1] + 0.05;
-  tmpV.copy(SWORD_BASE); h.sword.localToWorld(tmpV);
+  h.base.copy(h.blade.hilt); h.sword.localToWorld(h.base);
+  h.tip.copy(h.blade.tip); h.sword.localToWorld(h.tip);
+  const a = h.act, attacking = !holdingTurn && a && a.def.type && a.t >= a.def.active[0] - 0.05 && a.t <= a.def.active[1] + 0.05;
+  tmpV.copy(h.blade.trail); h.sword.localToWorld(tmpV);
   fx.trailPush(tmpV, h.tip, attacking);
-  if (a && a.def.ground && h.tip.y < 0.25 && Math.random() < 0.7) fx.spark(h.tip.x, 0.05, h.tip.z, 3);
-  if (a && a.def.type && a.t >= a.def.active[0] && a.t <= a.def.active[1]) heroHits(a);
+  if (!holdingTurn && a && a.def.ground && h.tip.y < 0.25 && Math.random() < 0.7) fx.spark(h.tip.x, 0.05, h.tip.z, 3);
+  if (!holdingTurn && a && a.def.type && a.t >= a.def.active[0] && a.t <= a.def.active[1]) heroHits(a);
   if (a && a.def.impact && !a.hitDone && a.t >= a.def.impact) { a.hitDone = true; impact(a); }
   // pickups
   for (let i = fx.orbs.length - 1; i >= 0; i--) {
@@ -884,6 +919,9 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 
 function heroHits(a) {
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
+  const turn = Boolean(TURN_AXIS[a.name]);
+  const knockback = d.kb * (turn ? 1.6 : 1);
+  const bonusLift = turn ? 1.5 : 0;
   let any = false;
   const bodyHit = (x, z, r) => {
     if (!d.body) return false;
@@ -893,10 +931,10 @@ function heroHits(a) {
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
     const def = ENEMY[e.type];
-    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult, d.kb, d.up || 0, true); continue; }
+    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult, knockback, d.up || 0, true, undefined, undefined, bonusLift); continue; }
     if (bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
-      damageEnemy(e, d.dmg * mult, d.kb, d.up || 0, !!d.heavy);
+      damageEnemy(e, d.dmg * mult, knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, 1.2, 0, 4)) {
@@ -928,7 +966,7 @@ function addCombo() {
   if (hero.rageT <= 0) hero.rage = Math.min(100, hero.rage + 1.4);
 }
 
-function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
+function damageEnemy(e, dmg, kb, up, heavy, ox, oz, bonusLift = 0) {
   const def = ENEMY[e.type];
   e.hp -= dmg; addCombo();
   const sx = ox ?? hero.x, sz = oz ?? hero.z;
@@ -946,14 +984,14 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
   fx.decal(e.x + dx * 0.6, e.z + dz * 0.6, 1.0 + Math.random() * 1.0);
   if (kill) {
     e.dead = true; e.state = 'dead'; e.t = 0;
-    e.vy = Math.max(e.vy, 0) + (up || 3) + 4 + Math.random() * 4 * (heavy ? 1.5 : 1);
+    e.vy = Math.max(e.vy, 0) + (up || 3) + bonusLift + 4 + Math.random() * 4 * (heavy ? 1.5 : 1);
     e.tumble = (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 8); e.tumbleA = 0;
     e.spin = (Math.random() - 0.5) * 10; G.ko++; gainExp(def.exp || 1);
     G.shake = Math.max(G.shake, heavy ? 0.35 : 0.2);
     e.face = Math.atan2(-dx, -dz);
     if (Math.random() < (e.type === 'brute' ? 0.4 : 0.06)) fx.orb(e.x, e.z);
   } else if (!def.armor || heavy) {
-    e.state = 'hit'; e.t = 0; e.vy = Math.max(e.vy, (up ? up * 0.8 : 0) + (heavy ? 3.5 : 1.8));
+    e.state = 'hit'; e.t = 0; e.vy = Math.max(e.vy, (up ? up * 0.8 : 0) + bonusLift + (heavy ? 3.5 : 1.8));
   }
 }
 
@@ -1312,6 +1350,10 @@ function resetGame(keepLevel = false) {
 }
 
 function startGame(stageIdx = 0, level = 1, exp = 0) {
+  const pick = hero.weapons[$('#weapon-select').value] || hero.weapons.standard;
+  for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick;
+  hero.sword = pick.mesh;
+  hero.blade = pick.blade;
   sfx.unlock(); sfx.play('ui'); sfx.startMusic();
   hero.level = level; hero.exp = exp;
   resetGame(true);
@@ -1450,6 +1492,10 @@ async function boot() {
     UI.loadText.textContent = `起動に失敗した（${err && err.message || err}）。この表示を伝えてほしい。`;
     console.error(err); return;
   }
+  { // weapon selector: standard sword plus any registered extras; hidden when there are none
+    const sel = $('#weapon-select');
+    for (const w of EXTRA_WEAPONS) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.label; sel.appendChild(o); }
+    sel.value = 'standard'; $('.weapon-choice').hidden = EXTRA_WEAPONS.length === 0; }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
   window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction };

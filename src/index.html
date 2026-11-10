@@ -59,6 +59,8 @@ button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
 .logo .en { display: block; font-size: clamp(13px, 2.2vw, 17px); letter-spacing: 0.62em; color: var(--ash-dim); margin-top: 10px; font-family: var(--f-ui); font-weight: 700; }
 .lede { margin: 0; font-size: 14px; line-height: 1.75; color: var(--ash-dim); max-width: 40ch; text-wrap: pretty; }
 .title-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 6px; }
+.weapon-choice { display: inline-flex; gap: 8px; align-items: center; color: #d5c7ad; }
+.weapon-choice select { min-height: 44px; padding: 0 8px; color: inherit; background: #242019; border: 1px solid #817258; border-radius: 6px; font: inherit; }
 .btn-primary {
   font-family: var(--f-display); font-size: 20px; letter-spacing: 0.3em; padding: 14px 30px 14px 36px;
   background: var(--blood); color: #fff; clip-path: polygon(0 0, 100% 0, 94% 100%, 0 100%);
@@ -187,6 +189,11 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
     <h1 class="logo"><span class="jp">鉄塊の傭兵</span><span class="en">IRONWAKE</span></h1>
     <p class="lede">身の丈を超える鉄塊を背負い、亡者の軍勢に一人で挑む。荒野、城塞跡、血の沼地。三つの戦場を斬り抜け、魔将を討て。</p>
     <div class="title-actions">
+      <label class="weapon-choice" hidden>武器
+        <select id="weapon-select">
+          <option value="standard">標準大剣</option>
+        </select>
+      </label>
       <button class="btn-primary" id="btn-start">出陣</button>
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
