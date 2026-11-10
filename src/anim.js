@@ -92,6 +92,9 @@ const sweepArm = (swing, torsoYaw, lean = 0.15, raise = -1.25) => ({
   cloak: [0.5, 0, -torsoYaw * 0.2], rootY: -0.15,
 });
 
+// spin arm: arm straight out from the shoulder, blade continuing the arm almost level with the ground
+const spinArm = (swing, torsoYaw, crouch = -0.3) => ({ ...sweepArm(swing, torsoYaw, 0.05, -1.5), farmR: [0, 0, 0], handR: [1.6, 0, 0], rootY: crouch });
+
 export const HERO_ACTIONS = {
   // horizontal slash, right to left
   L1: {
@@ -188,18 +191,23 @@ export const HERO_ACTIONS = {
     ],
   },
   // ---- held heavy: spin in, loop while held, spin out ----
+  // charge: hold heavy to wind up (blade dragged low behind), release to unleash the spin
+  CHARGE: {
+    dur: 99,
+    keys: [[0, HERO.idle], [0.25, { ...spinArm(-0.6, -0.9, -0.4), torso: [0.25, -0.75, 0], uarmL: [-0.4, 0, 0.9], farmL: [-0.6, 0, 0], thighR: [-0.6, 0, -0.2], shinR: [0.9, 0, 0], thighL: [0.3, 0, 0.25], shinL: [0.6, 0, 0], cloak: [0.4, 0, 0.2], rootYaw: 0.18 }, 'out']],
+  },
   SPIN_IN: {
-    dur: 0.16, active: [-1, -1], chainAt: 99, type: 'spin',
-    keys: [[0, HERO.idle], [0.16, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out']],
+    dur: 0.1, active: [-1, -1], chainAt: 99, type: 'spin',
+    keys: [[0, { ...spinArm(-0.6, -0.9, -0.4), rootYaw: 0.18 }], [0.1, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }, 'out']],
   },
   SPIN_LOOP: {
     dur: 0.3, active: [0.0, 0.3], chainAt: 99, dmg: 24, kb: 7, heavy: true, sound: 'swingHeavy', type: 'sweep',
-    keys: [[0, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }],
-      [0.3, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18 + (2 * Math.PI), rootY: -0.3 }, 'lin']],
+    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }],
+      [0.3, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 + (2 * Math.PI) }, 'lin']],
   },
   SPIN_OUT: {
     dur: 0.36, active: [-1, -1], chainAt: 0.2, type: 'spin',
-    keys: [[0, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.3 }], [0.36, HERO.idle, 'io']],
+    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0.18 }], [0.36, HERO.idle, 'io']],
   },
   // ---- rage-only moves ----
   // vertical somersault cut: the blade wheels through a full vertical circle in front
@@ -392,3 +400,5 @@ export function bossPose(state, t, phase, out) {
 
 // Lv6 finisher: a leaping slam like the rage version with a slightly smaller shockwave
 HERO_ACTIONS.L6 = { ...HERO_ACTIONS.RLEAP, dmg: 50, radius: 3.8 };
+// heavy pressed after the 2nd light hit: a crushing overhead slam with a wide shockwave
+HERO_ACTIONS.FIN2 = { ...HERO_ACTIONS.L3, dmg: 52, radius: 3.8, kb: 9, up: 5 };

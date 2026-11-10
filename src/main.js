@@ -582,7 +582,8 @@ function comboChain() {
 function pickLight(prev) {
   const [mx, my] = input.move();
   const moving = Math.hypot(mx, my) > 0.3;
-  if (!prev) { hero.comboIdx = 0; return moving ? 'DASH' : 'L1'; }
+  if (!prev) { hero.comboIdx = 0; hero.lightCount = 1; return moving ? 'DASH' : 'L1'; }
+  hero.lightCount = (hero.lightCount || 0) + 1;
   if (moving) {
     const rel = Math.abs(angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face);
     if (rel > 2.3) return 'UPPER';
@@ -592,6 +593,8 @@ function pickLight(prev) {
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
   return chain[hero.comboIdx];
 }
+// heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
+const FINISHERS = { 1: 'UPPER', 2: 'FIN2', 3: 'RSPIN2', 4: 'L5', 5: 'RLEAP' };
 const LEVEL_MAX = 10;
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + 0.07 * (hero.level - 1);
@@ -652,8 +655,10 @@ function updateHero(dt) {
   const act = h.act;
   if (wantDodge && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
-    if (wantHeavy) { h.spinLoops = 0; startAction('SPIN_IN'); }
+    if (wantHeavy) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
     else if (wantAttack) startAction(pickLight(null));
+  } else if (act.name === 'DODGE') {
+    if (wantAttack) act.queued = 'counter';  // attack during a roll: turning counter-cut on recovery
   } else if (act.def.type) {
     if (wantAttack) act.queued = 'light';
     if (wantHeavy) act.queued = 'heavy';
@@ -679,17 +684,38 @@ function updateHero(dt) {
       // steer while spinning
       if (moving > 0.2) { const tf = Math.atan2(-mx, my); h.x += Math.sin(tf) * 3.5 * dt; h.z += Math.cos(tf) * 3.5 * dt; }
     }
-    if (a.name === 'SPIN_IN' && a.t >= d.dur) startAction('SPIN_LOOP');
+    if (a.name === 'CHARGE') {
+      // hold to build up to 3 charge levels, release to spin; more turns and damage per level
+      h.charge += dt;
+      const lv = h.charge >= 2.0 ? 3 : h.charge >= 1.2 ? 2 : h.charge >= 0.5 ? 1 : 0;
+      if (lv > h.chargeLv) {
+        h.chargeLv = lv; sfx.play('clang', 0.5 + lv * 0.2); fx.ring(h.x, h.z, 1.2 + lv * 0.7, lv === 3 ? 0xff4020 : 0xffb070, 0.4);
+        fx.spark(h.tip.x, h.tip.y, h.tip.z, 6 + lv * 4);
+      }
+      if (h.chargeLv > 0 && Math.random() < 0.3 * h.chargeLv) fx.ember(h.x, 0.1, h.z);
+      h.mat.emissive.setRGB(0.04 * h.chargeLv * (0.7 + 0.3 * Math.sin(G.time * 30)), 0.012 * h.chargeLv, 0);
+      if (!input.held.has('heavy') || h.charge > 3.5) {
+        h.spinTarget = [1, 2, 3, 4][h.chargeLv] + (h.rageT > 0 ? 2 : 0) + Math.floor((h.level - 1) / 3);
+        h.chargeMul = 1 + 0.25 * h.chargeLv; h.spinLoops = 0;
+        if (h.rageT <= 0) h.mat.emissive.setRGB(0, 0, 0);
+        startAction('SPIN_IN');
+      }
+    } else if (a.name === 'SPIN_IN' && a.t >= d.dur) startAction('SPIN_LOOP');
     else if (a.name === 'SPIN_LOOP' && a.t >= d.dur) {
-      // one rotation per loop; keep spinning while heavy is held (more loops when raging)
+      // one rotation per loop; the number of turns was fixed when the charge was released
       h.pose.rootYaw -= Math.PI * 2;
       h.spinLoops = (h.spinLoops || 0) + 1;
-      const max = (h.rageT > 0 ? 10 : 6) + Math.floor((h.level - 1) / 2);
-      if (input.held.has('heavy') && h.spinLoops < max) startAction('SPIN_LOOP');
+      if (h.spinLoops < (h.spinTarget || 1)) startAction('SPIN_LOOP');
       else startAction('SPIN_OUT');
     } else if (d.type && a.t >= d.chainAt && a.queued) {
-      if (a.queued === 'heavy') { h.spinLoops = 0; startAction('SPIN_IN'); }
-      else startAction(pickLight(a.name));
+      if (a.queued === 'heavy') {
+        // heavy mid-combo: a finisher that depends on how many light hits came before
+        const n = h.lightCount || 0;
+        if (n <= 0) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
+        else { startAction(FINISHERS[Math.min(n, 5)]); h.lightCount = 0; }
+      } else startAction(pickLight(a.name));
+    } else if (a.t >= d.dur && a.queued === 'counter') {
+      h.lightCount = 1; startAction('L4');
     } else if (a.t >= d.dur) {
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
@@ -770,7 +796,7 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 }
 
 function heroHits(a) {
-  const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul();
+  const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
   let any = false;
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
@@ -842,7 +868,7 @@ function hurtHero(dmg, fromX, fromZ) {
     G.slowmo = 0.35; setTimeout(() => endGame(false), 1800);
     return;
   }
-  if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) startAction('HURT');
+  if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) { if (h.act && h.act.name === 'CHARGE') h.mat.emissive.setRGB(0, 0, 0); startAction('HURT'); }
 }
 
 // ======================================================================= enemy logic
