@@ -96,6 +96,19 @@ const sweepArm = (swing, torsoYaw, lean = 0.15, raise = -1.25) => ({
 // arm lifted a little above the shoulder line so the whole blade rises slightly from hilt to tip
 const spinArm = (swing, torsoYaw, crouch = -0.3) => ({ ...sweepArm(swing, torsoYaw, 0.0, -1.78), farmR: [0, 0, 0], handR: [1.57, 0, 0], rootY: crouch });
 
+const CHARGE_POSE = {
+  pelvis: [0.05, -0.45, 0], torso: [0.25, -0.95, 0], head: [-0.05, 0.75, 0],
+  uarmR: [0.1, -0.2, -0.9], farmR: [-1.0, 0, 0], handR: [2.15, 0, 0],
+  uarmL: [-0.35, -0.9, 0.35], farmL: [-1.3, 0, 0], handL: [0.3, 0, 0],
+  thighR: [-0.5, 0, -0.25], shinR: [0.95, 0, 0], thighL: [0.35, 0, 0.3], shinL: [0.75, 0, 0],
+  footR: [-0.2, 0, 0], cloak: [0.4, 0, 0.25], rootY: -0.38,
+};
+const BRACE_POSE = {
+  ...spinArm(0.5, -0.1), torso: [0.35, 0.05, 0], head: [-0.25, 0, 0],
+  thighR: [-0.65, 0, -0.38], shinR: [0.95, 0, 0], thighL: [0.45, 0, 0.38], shinL: [0.85, 0, 0],
+  footR: [-0.25, 0, 0], footL: [0.1, 0, 0], cloak: [1.0, 0, 0.4], rootY: -0.42,
+};
+
 export const HERO_ACTIONS = {
   // horizontal slash, right to left
   L1: {
@@ -191,24 +204,33 @@ export const HERO_ACTIONS = {
       [0.5, HERO.idle, 'io'],
     ],
   },
-  // ---- held heavy: spin in, loop while held, spin out ----
-  // charge: hold heavy to wind up (blade dragged low behind), release to unleash the spin
+  // ---- heavy: wind up (CHARGE), uncoil (SPIN_IN), full turns (SPIN_LOOP), brace (SPIN_OUT) ----
+  // wind-up: elbows bent, blade pulled back behind the right hip, shoulders twisted away, low stance
   CHARGE: {
     dur: 99,
-    keys: [[0, HERO.idle], [0.25, { ...spinArm(-0.6, -0.9, -0.4), torso: [0.25, -0.75, 0], uarmL: [-0.4, 0, 0.9], farmL: [-0.6, 0, 0], thighR: [-0.6, 0, -0.2], shinR: [0.9, 0, 0], thighL: [0.3, 0, 0.25], shinL: [0.6, 0, 0], cloak: [0.4, 0, 0.2], rootYaw: 0 }, 'out']],
+    keys: [[0, HERO.idle], [0.25, CHARGE_POSE, 'out']],
   },
+  // release: step in, hips lead, then shoulders, then the arm extends and the blade whips through last
   SPIN_IN: {
-    dur: 0.1, active: [-1, -1], chainAt: 99, type: 'spin',
-    keys: [[0, { ...spinArm(-0.6, -0.9, -0.4), rootYaw: 0 }], [0.1, { ...spinArm(-0.2, -0.6), rootYaw: 0 }, 'out']],
+    dur: 0.18, active: [0.08, 0.18], chainAt: 99, dmg: 24, kb: 7, heavy: true, sound: 'swingHeavy', type: 'sweep',
+    keys: [
+      [0, CHARGE_POSE],
+      [0.06, { ...CHARGE_POSE, pelvis: [0.1, 0.35, 0], torso: [0.25, -0.65, 0], uarmR: [0.05, -0.85, -1.1], farmR: [-0.85, 0, 0], handR: [2.2, 0, 0],
+        thighR: [-0.95, 0, -0.2], shinR: [0.9, 0, 0], thighL: [0.55, 0, 0.3], shinL: [0.6, 0, 0], rootY: -0.34 }, 'out'],
+      [0.12, { ...spinArm(-0.55, -0.6), farmR: [-0.4, 0, 0], handR: [2.0, 0, 0], pelvis: [0, 0.1, 0], torso: [0.1, -0.45, 0],
+        thighR: [-0.7, 0, -0.2], shinR: [0.7, 0, 0], thighL: [0.4, 0, 0.3], shinL: [0.5, 0, 0], rootY: -0.32 }, 'io'],
+      [0.18, { ...spinArm(-0.2, -0.6) }, 'out'],
+    ],
   },
   SPIN_LOOP: {
     dur: 0.3, active: [0.0, 0.3], chainAt: 99, dmg: 24, kb: 7, heavy: true, sound: 'swingHeavy', type: 'sweep',
     keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0 }],
       [0.3, { ...spinArm(-0.2, -0.6), rootYaw: 2 * Math.PI }, 'lin']],
   },
+  // finish: follow through into a braced, planted stance and hold it ~0.12 s, then recover
   SPIN_OUT: {
-    dur: 0.36, active: [-1, -1], chainAt: 0.2, type: 'spin',
-    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0 }], [0.36, HERO.idle, 'io']],
+    dur: 0.48, active: [-1, -1], chainAt: 0.18, type: 'spin',
+    keys: [[0, { ...spinArm(-0.2, -0.6), rootYaw: 0 }], [0.04, BRACE_POSE, 'out'], [0.16, BRACE_POSE], [0.48, HERO.idle, 'io']],
   },
   // ---- rage-only moves ----
   // vertical somersault cut: the blade wheels through a full vertical circle in front
@@ -493,16 +515,6 @@ const PLANT = {
   uarmR: [-1.6, 0, -0.08], farmR: [-0.8, 0, 0], handR: [3.15, 0, 0],
   uarmL: [-1.6, 0, 0.12], farmL: [-0.85, 0, 0],
   thighR: [-0.2, 0, -0.2], shinR: [0.3, 0, 0], thighL: [0.1, 0, 0.2], shinL: [0.2, 0, 0], cloak: [0.5, 0, 0], rootY: 0.0,
-};
-// planted-sword whirl: grip the grounded blade and swing the whole body around it, legs flung out
-HERO_ACTIONS.PIVOT = {
-  dur: 0.95, active: [0.16, 0.72], chainAt: 0.74, dmg: 26, kb: 10, up: 3, body: 1.9, bodyAll: true, multi: 2, ground: true, sound: 'swingHeavy', type: 'thrust',
-  keys: [
-    [0, HERO.idle],
-    [0.14, { ...PLANT, rootY: 0.0 }, 'out'],
-    [0.72, { ...PLANT, torso: [0.6, 0, 0], thighR: [-0.4, 0, -1.2], shinR: [0.2, 0, 0], thighL: [0.0, 0, 1.0], shinL: [0.3, 0, 0], cloak: [1.3, 0, 0.6], rootY: 0.05, rootYaw: 2 * Math.PI }, 'lin'],
-    [0.95, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
-  ],
 };
 // pole vault: plant the blade, vault high over it and come down in an overhead slam
 HERO_ACTIONS.VAULT = {

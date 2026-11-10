@@ -19,7 +19,7 @@ export class Input {
     for (const [action, el] of Object.entries(buttons)) {
       el.addEventListener('pointerdown', e => {
         e.preventDefault();
-        el.setPointerCapture?.(e.pointerId);
+        try { el.setPointerCapture?.(e.pointerId); } catch (err) { /* no active pointer (synthetic events) */ }
         this.press(action); el.classList.add('down');
       });
       const up = () => { this.held.delete(action); el.classList.remove('down'); };

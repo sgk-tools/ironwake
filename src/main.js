@@ -594,7 +594,12 @@ function makeHero() {
   // the hero material is shared by every part; clone it so rage glow does not leak elsewhere
   const mat = A.hero.torso.material.clone();
   // the baked albedo is very dark (black steel, black cape); lift it so the hero reads against the ground
-  mat.color.setScalar(2.2); mat.envMapIntensity = 1.6;
+  // blackened iron: dark, low-sheen base; the baked edge wear stays as a dull silver on rims
+  mat.color.setRGB(0.78, 0.8, 0.86); mat.envMapIntensity = 0.9; mat.metalness = 0.75;
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>',
+      '#include <roughnessmap_fragment>\n  roughnessFactor = clamp(roughnessFactor * 1.25 + 0.18, 0.0, 1.0);');
+  };
   rig.root.traverse(o => { if (o.isMesh) o.material = mat; });
   const sw = new THREE.Mesh(A.sword.sword.geometry, A.sword.sword.material);
   sw.castShadow = true;
@@ -643,7 +648,8 @@ function startAction(name) {
   if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
   h.act = { name, t: 0, def, hitDone: false, swung: false };
   h.attackId++;
-  if (def.type && name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') {
+  const aim = h.aimNext !== false; h.aimNext = true;
+  if (aim && def.type && name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') {
     // aim: stick direction, else nearest enemy in front-ish range
     const [mx, my] = input.move();
     if (Math.hypot(mx, my) > 0.2) h.face = Math.atan2(-mx, my);
@@ -669,32 +675,41 @@ function startAction(name) {
 function comboChain() {
   const lv = hero.level;
   if (hero.rageT > 0) {
-    return [['L1', 'L1B', 'LOWSWEEP'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN'], ['RSPIN2', 'PIVOT'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+    return [['L1', 'L1B', 'LOWSWEEP'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN'], ['RSPIN2', 'SPIN1'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
   return [['L1', 'L1B', 'VCUT', 'LOWSWEEP'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG'],
-    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'PIVOT']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG']] : []), ...(lv >= 6 ? [['L6', 'VAULT']] : [])];
+    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG']] : []), ...(lv >= 6 ? [['L6', 'VAULT']] : [])];
 }
 function pickFrom(pool, prev) {
   const opts = pool.filter(n => n !== prev);
   const list = opts.length ? opts : pool;
   return list[Math.floor(Math.random() * list.length)];
 }
-function pickLight(prev) {
+// Direction of the stick relative to the hero's current facing, read when the attack is pressed
+// (before this frame's movement turns the hero). null = no direction.
+function readDir() {
   const [mx, my] = input.move();
-  const moving = Math.hypot(mx, my) > 0.3;
-  if (!prev) { hero.comboIdx = 0; hero.lightCount = 1; return moving ? 'DASH' : pickFrom(comboChain()[0], null); }
+  if (Math.hypot(mx, my) < 0.3) return null;
+  const rel = angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face;   // < 0: hero's right
+  if (Math.abs(rel) < 0.8) return 'fwd';
+  if (Math.abs(rel) > 2.3) return 'back';
+  return rel < 0 ? 'right' : 'left';
+}
+// forward = thrust, left/right = horizontal cut toward that side, back = rising cut, none = combo
+function pickLight(prev, dir = readDir()) {
+  hero.aimNext = true;
+  if (!prev) { hero.comboIdx = 0; hero.lightCount = 0; }
   hero.lightCount = (hero.lightCount || 0) + 1;
-  if (moving) {
-    const rel = Math.abs(angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face);
-    if (rel > 2.3) return 'UPPER';
-    if (rel > 0.8) return 'CROSS';
-  }
+  if (dir === 'fwd') return prev ? 'STAB' : 'DASH';
+  if (dir === 'left' || dir === 'right') { hero.aimNext = false; return dir === 'left' ? 'L1' : 'L2'; }
+  if (dir === 'back') return 'UPPER';
+  if (!prev) return pickFrom(comboChain()[0], null);
   const chain = comboChain();
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
   return pickFrom(chain[hero.comboIdx], prev);
 }
 // heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
-const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'PIVOT'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
+const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
 const LEVEL_MAX = 10;
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + 0.07 * (hero.level - 1);
@@ -731,10 +746,12 @@ function rageMult() { return hero.rageT > 0 ? 1.35 : 1; }
 
 const TURN_AXIS = {
   SPIN: 'rootYaw', SPIN_LOOP: 'rootYaw', L4: 'rootYaw', SPIN1: 'rootYaw',
-  REVSPIN: 'rootYaw', RSPIN2: 'rootYaw', PIVOT: 'rootYaw',
+  REVSPIN: 'rootYaw', RSPIN2: 'rootYaw', SPIN_IN: 'rootYaw',
   RFLIP: 'rootPitch', WHEEL: 'rootPitch',
 };
-const TURN_HOLD_SECONDS = 0.12;
+// heavy (charged) spin pushes grunts farther than the spins inside the light combo
+const HEAVY_SPIN = new Set(['SPIN_IN', 'SPIN_LOOP']);
+const HEAVY_SPIN_KB = 1.5;
 
 function updateHero(dt) {
   const h = hero;
@@ -753,7 +770,7 @@ function updateHero(dt) {
     if (h.rageT <= 0) { h.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0; }
   }
   // input
-  const holdingTurn = h.act?.turnHold > 0;
+  const holdingTurn = false; // light-combo spins flow straight on; the charged spin pauses in SPIN_OUT
   if (input.consume('rage') && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
     h.rage = 0; h.rageT = 12; startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
@@ -768,9 +785,9 @@ function updateHero(dt) {
   } else if (act.name === 'DODGE') {
     if (wantAttack) act.queued = 'counter';  // attack during a roll: turning counter-cut on recovery
   } else if (act.def.type) {
-    if (wantAttack) act.queued = 'light';
+    if (wantAttack) { act.queued = 'light'; act.queuedDir = readDir(); }
     if (wantHeavy) act.queued = 'heavy';
-    if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) act.queued = 'light';
+    if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) { act.queued = 'light'; act.queuedDir = readDir(); }
   }
 
   // action progression
@@ -782,16 +799,7 @@ function updateHero(dt) {
   if (h.act) {
     const a = h.act, d = a.def;
     turnAxis = TURN_AXIS[a.name];
-    if (holdingTurn) a.turnHold = Math.max(0, a.turnHold - dt);
-    else {
-      a.t += dt * (d.type ? speedK : 1);
-      const finalTurn = a.name !== 'SPIN_LOOP' || h.spinLoops + 1 >= (h.spinTarget || 1);
-      if (turnAxis && finalTurn && !a.turnHeld && a.t >= d.active[1]) {
-        a.t = d.active[1];
-        a.turnHeld = beginTurnHold = true;
-        a.turnHold = TURN_HOLD_SECONDS;
-      }
-    }
+    a.t += dt * (d.type ? speedK : 1);
     sampleKeys(d.keys, a.t, h.target);
     if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
@@ -833,7 +841,7 @@ function updateHero(dt) {
         const n = h.lightCount || 0;
         if (n <= 0) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
         else { startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
-      } else startAction(pickLight(a.name));
+      } else startAction(pickLight(a.name, a.queuedDir));
     } else if (a.t >= d.dur && a.queued === 'counter') {
       h.lightCount = 1; startAction('L4');
     } else if (a.t >= d.dur) {
@@ -920,7 +928,7 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 function heroHits(a) {
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
   const turn = Boolean(TURN_AXIS[a.name]);
-  const knockback = d.kb * (turn ? 1.6 : 1);
+  const knockback = d.kb * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB : 1);
   const bonusLift = turn ? 1.5 : 0;
   let any = false;
   const bodyHit = (x, z, r) => {
@@ -995,7 +1003,7 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz, bonusLift = 0) {
   }
 }
 
-const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2', 'REVSPIN', 'PIVOT']);
+const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2', 'REVSPIN']);
 function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;
@@ -1498,7 +1506,7 @@ async function boot() {
     sel.value = 'standard'; $('.weapon-choice').hidden = EXTRA_WEAPONS.length === 0; }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));
