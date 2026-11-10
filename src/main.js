@@ -10,7 +10,7 @@ const canvas = $('#game');
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch, powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.35;
+renderer.toneMappingExposure = 1.75;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const QUALITY = { ratio: Math.min(window.devicePixelRatio || 1, isTouch ? 2 : 1.5), shadows: true };
@@ -30,6 +30,8 @@ const sc = sun.shadow.camera; sc.left = -16; sc.right = 16; sc.top = 16; sc.bott
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 const rim = new THREE.DirectionalLight(0x9aa6ff, 0.35); rim.position.set(-10, 6, -12); scene.add(rim);
+// fill light from behind the camera: the camera looks at the side of everything the sun does not reach
+const fill = new THREE.DirectionalLight(0xfff1e6, 1.6); scene.add(fill, fill.target);
 const rageLight = new THREE.PointLight(0xff2a10, 0, 9, 1.6); scene.add(rageLight);
 
 function resize() {
@@ -465,7 +467,7 @@ const STAGES = [
   {
     name: '第一戦場', place: '亡者の荒野',
     boss: { name: '角の魔騎士', hp: 3200, speed: 1.0, dmg: 1.0, tint: [1, 1, 1], enrage: false },
-    env: { fog: 0x150c0b, density: 0.026, sky: 0x8a7e86, gnd: 0x2a1a14, hemi: 1.1, sun: 0xffbf98, sunI: 3.2, ground: 0xb4aaa6, envI: 1.6, rim: 0x9aa6ff },
+    env: { fog: 0x3a2a26, density: 0.018, sky: 0xb8aab0, gnd: 0x4a3a30, hemi: 1.7, sun: 0xffc8a6, sunI: 3.4, ground: 0xc4bab4, envI: 2.0, rim: 0x9aa6ff, fill: 1.6 },
     waves: [
       { label: '第一波', sub: '亡者の群れを斬り払え', total: 40, max: 22, mix: { grunt: 1 }, rate: 0.35 },
       { label: '第二波', sub: '重装の亡者が混じっている', total: 60, max: 28, mix: { grunt: 0.86, brute: 0.14 }, rate: 0.28 },
@@ -476,7 +478,7 @@ const STAGES = [
   {
     name: '第二戦場', place: '灰の城塞跡',
     boss: { name: '灰の処刑人', hp: 4600, speed: 1.22, dmg: 1.15, tint: [0.62, 0.7, 0.85], enrage: false },
-    env: { fog: 0x0c1016, density: 0.03, sky: 0x7d8aa6, gnd: 0x14161c, hemi: 1.15, sun: 0xa9bcff, sunI: 2.6, ground: 0x8c94a0, envI: 1.1, rim: 0xffb080 },
+    env: { fog: 0x283240, density: 0.02, sky: 0xaab8d4, gnd: 0x343a46, hemi: 1.8, sun: 0xbfcfff, sunI: 3.0, ground: 0xa6aebc, envI: 1.7, rim: 0xffb080, fill: 1.8 },
     waves: [
       { label: '第一波', sub: '槍を構えた亡者が駆けてくる', total: 55, max: 26, mix: { grunt: 0.6, lancer: 0.4 }, rate: 0.3 },
       { label: '第二波', sub: '重装の亡者が隊列を組む', total: 75, max: 30, mix: { grunt: 0.45, lancer: 0.3, brute: 0.25 }, rate: 0.25 },
@@ -487,7 +489,7 @@ const STAGES = [
   {
     name: '第三戦場', place: '血の沼地',
     boss: { name: '双角の魔将', hp: 6200, speed: 1.3, dmg: 1.3, tint: [1.0, 0.5, 0.45], enrage: true },
-    env: { fog: 0x1c0606, density: 0.032, sky: 0x9a5a5a, gnd: 0x220808, hemi: 1.05, sun: 0xff7a5a, sunI: 2.9, ground: 0x8a5a52, envI: 1.3, rim: 0xff5030 },
+    env: { fog: 0x4a1a16, density: 0.021, sky: 0xc89490, gnd: 0x4a2420, hemi: 1.8, sun: 0xff9a7e, sunI: 3.2, ground: 0xb08a82, envI: 1.8, rim: 0xff5030, fill: 1.8 },
     waves: [
       { label: '第一波', sub: '沼から亡者が這い上がる', total: 70, max: 30, mix: { grunt: 0.55, lancer: 0.3, brute: 0.15 }, rate: 0.26 },
       { label: '第二波', sub: '重装の亡者が群れをなす', total: 90, max: 34, mix: { grunt: 0.35, lancer: 0.3, brute: 0.35 }, rate: 0.22 },
@@ -517,6 +519,8 @@ function makeHero() {
   const rig = buildRig(A.hero, A.skel);
   // the hero material is shared by every part; clone it so rage glow does not leak elsewhere
   const mat = A.hero.torso.material.clone();
+  // the baked albedo is very dark (black steel, black cape); lift it so the hero reads against the ground
+  mat.color.setScalar(2.2); mat.envMapIntensity = 1.6;
   rig.root.traverse(o => { if (o.isMesh) o.material = mat; });
   const sw = new THREE.Mesh(A.sword.sword.geometry, A.sword.sword.material);
   sw.castShadow = true;
@@ -533,6 +537,7 @@ function makeHero() {
 
 function makeBoss() {
   const bmat = A.boss.torso.material.clone();
+  bmat.envMapIntensity = 1.5;
   const rig = buildRig(A.boss, A.skel, { material: bmat });
   const axe = new THREE.Mesh(A.weapons.bossaxe.geometry, A.weapons.bossaxe.material);
   axe.castShadow = true; axe.rotation.x = Math.PI / 2; axe.position.set(0, -0.085, 0);
@@ -1092,7 +1097,7 @@ function nextWave() {
     boss = boss || makeBoss();
     const bc = stage().boss;
     boss.maxHp = boss.hp = bc.hp; boss.speed = bc.speed; boss.dmgMul = bc.dmg; boss.enrageOn = bc.enrage; boss.enraged = false;
-    boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint); boss.mat.emissive.setRGB(0, 0, 0);
+    boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint).multiplyScalar(2.0); boss.mat.emissive.setRGB(0, 0, 0);
     $('#boss .name').textContent = bc.name;
     // enter from the top of the screen (camera looks toward +Z), kept inside the arena
     boss.x = hero.x * 0.6; boss.z = hero.z + 14;
@@ -1154,6 +1159,7 @@ function updateCamera(dt) {
   camera.lookAt(camLook);
   sun.position.set(hero.x + 14, 20, hero.z + 22);
   sun.target.position.set(hero.x, 0, hero.z);
+  fill.position.set(camera.position.x - 3, camera.position.y + 6, camera.position.z - 4); fill.target.position.set(hero.x, 0.8, hero.z);
 }
 
 const hudCache = {};
@@ -1187,7 +1193,7 @@ function updateHUD(dt) {
 function applyEnv(env) {
   scene.fog.color.setHex(env.fog); scene.fog.density = env.density; scene.background = scene.fog.color;
   hemi.color.setHex(env.sky); hemi.groundColor.setHex(env.gnd); hemi.intensity = env.hemi;
-  sun.color.setHex(env.sun); sun.intensity = env.sunI; rim.color.setHex(env.rim);
+  sun.color.setHex(env.sun); sun.intensity = env.sunI; rim.color.setHex(env.rim); fill.intensity = env.fill ?? 1.6;
   if (groundMat) groundMat.color.setHex(env.ground);
   scene.environmentIntensity = env.envI;
 }
@@ -1345,7 +1351,8 @@ async function boot() {
   try {
     buildWorld();
     fx = new FX();
-    crowd = new Crowd(A.grunt, A.skel, { gsword: A.weapons.gsword, club: A.weapons.club, spear: A.props.spear }, 72);
+    for (const m of [A.grunt.torso.material, A.weapons.gsword.material]) { m.color.setScalar(1.6); m.envMapIntensity = 1.4; }
+  crowd = new Crowd(A.grunt, A.skel, { gsword: A.weapons.gsword, club: A.weapons.club, spear: A.props.spear }, 72);
     hero = makeHero();
     boss = makeBoss(); boss.rig.root.visible = false; boss.state = 'hidden';
     // warm up shaders so the first fight frame does not stall
