@@ -675,10 +675,10 @@ function startAction(name) {
 function comboChain() {
   const lv = hero.level;
   if (hero.rageT > 0) {
-    return [['L1', 'L1B', 'LOWSWEEP'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN'], ['RSPIN2', 'SPIN1'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
-  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG'],
-    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG']] : []), ...(lv >= 6 ? [['L6', 'VAULT']] : [])];
+  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP', 'CROSS'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT', 'L2B'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG'],
+    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B', 'CROSS2']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG', 'L2B']] : []), ...(lv >= 6 ? [['L6', 'VAULT']] : [])];
 }
 function pickFrom(pool, prev) {
   const opts = pool.filter(n => n !== prev);
@@ -695,15 +695,15 @@ function readDir() {
   if (Math.abs(rel) > 2.3) return 'back';
   return rel < 0 ? 'right' : 'left';
 }
-// forward = thrust, left/right = horizontal cut toward that side, back = rising cut, none = combo
+// Moving when the combo starts = lunging thrust. During a combo: back = rising launcher, left/right =
+// diagonal cut toward that side; otherwise (no direction or forward) the random combo pools.
+// The direction is the one held when the attack was pressed (kept for buffered presses).
 function pickLight(prev, dir = readDir()) {
   hero.aimNext = true;
-  if (!prev) { hero.comboIdx = 0; hero.lightCount = 0; }
+  if (!prev) { hero.comboIdx = 0; hero.lightCount = 1; return dir ? 'DASH' : pickFrom(comboChain()[0], null); }
   hero.lightCount = (hero.lightCount || 0) + 1;
-  if (dir === 'fwd') return prev ? 'STAB' : 'DASH';
-  if (dir === 'left' || dir === 'right') { hero.aimNext = false; return dir === 'left' ? 'L1' : 'L2'; }
   if (dir === 'back') return 'UPPER';
-  if (!prev) return pickFrom(comboChain()[0], null);
+  if (dir === 'left' || dir === 'right') return dir === 'left' ? 'CROSS' : 'CROSS2';
   const chain = comboChain();
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
   return pickFrom(chain[hero.comboIdx], prev);
@@ -751,7 +751,7 @@ const TURN_AXIS = {
 };
 // heavy (charged) spin pushes grunts farther than the spins inside the light combo
 const HEAVY_SPIN = new Set(['SPIN_IN', 'SPIN_LOOP']);
-const HEAVY_SPIN_KB = 1.5;
+const HEAVY_SPIN_KB = 3.0;          // x charge bonus below; aims for ~20-25 m on grunts
 
 function updateHero(dt) {
   const h = hero;
@@ -825,7 +825,7 @@ function updateHero(dt) {
       if (h.chargeLv > 0 && Math.random() < 0.3 * h.chargeLv) fx.ember(h.x, 0.1, h.z);
       h.mat.emissive.setRGB(0.04 * h.chargeLv * (0.7 + 0.3 * Math.sin(G.time * 30)), 0.012 * h.chargeLv, 0);
       if (!input.held.has('heavy') || h.charge > 3.5) {
-        h.spinTarget = [1, 2, 3, 4][h.chargeLv] + (h.rageT > 0 ? 2 : 0) + Math.floor((h.level - 1) / 3);
+        h.spinTarget = 1;   // one full turn; charge level raises damage and knockback instead
         h.chargeMul = 1 + 0.25 * h.chargeLv; h.spinLoops = 0;
         if (h.rageT <= 0) h.mat.emissive.setRGB(0, 0, 0);
         startAction('SPIN_IN');
@@ -928,7 +928,7 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 function heroHits(a) {
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
   const turn = Boolean(TURN_AXIS[a.name]);
-  const knockback = d.kb * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB : 1);
+  const knockback = d.kb * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB * (1 + 0.1 * (h.chargeLv || 0)) : 1);
   const bonusLift = turn ? 1.5 : 0;
   let any = false;
   const bodyHit = (x, z, r) => {

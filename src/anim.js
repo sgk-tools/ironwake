@@ -3,6 +3,7 @@
 //   arm/leg rotation.x < 0 swings the limb forward, shoulders use Euler order 'YZX'
 //   (y = horizontal swing, z = raise sideways: negative raises the right arm, positive the left).
 //   Weapon blade direction in hand space = (0, -sin θ, cos θ) with θ = sum of x rotations down the arm.
+import { CUTS } from './cuts.js';
 export const JOINTS = ['pelvis', 'torso', 'head', 'cloak', 'uarmR', 'uarmL', 'farmR', 'farmL', 'handR', 'handL',
   'thighR', 'thighL', 'shinR', 'shinL', 'footR', 'footL'];
 export const ORDER = { uarmR: 'YZX', uarmL: 'YZX', torso: 'YXZ', pelvis: 'YXZ', handR: 'YZX', handL: 'YZX' };
@@ -548,4 +549,54 @@ HERO_ACTIONS.DRAG = {
     [0.52, HERO_ACTIONS.UPPER.keys[2][1], 'out'],
     [0.75, HERO.idle, 'io'],
   ],
+};
+
+// ======================================================================= natural cuts (stage 1b)
+// Replace the stiff straight-arm sweeps with IK-solved cuts (src/cuts.js): cocked wind-up with a bent
+// elbow, the arm extending into the strike, contact in front, the wrist turning over and the arm folding
+// back across the body. Spins use a soft-elbow reach instead of a locked arm.
+const cut = (name, t0 = 0, extra = {}) => CUTS[name].map(([t, p, e]) => [t0 + t, { ...p, ...extra }, e || 'io']);
+const pose = (name, i, extra = {}) => ({ ...CUTS[name][i][1], ...extra });
+const withEnd = (keys, t, end = HERO.idle) => [...keys, [t, end, 'io']];
+
+HERO_ACTIONS.L1 = { ...HERO_ACTIONS.L1, dur: 0.5, active: [0.12, 0.26], chainAt: 0.28, keys: withEnd(cut('R2L'), 0.5) };
+HERO_ACTIONS.L2 = { ...HERO_ACTIONS.L2, dur: 0.5, active: [0.12, 0.26], chainAt: 0.28, keys: withEnd(cut('L2R'), 0.5) };
+HERO_ACTIONS.CROSS = { ...HERO_ACTIONS.CROSS, dur: 0.52, active: [0.13, 0.28], chainAt: 0.3, keys: withEnd(cut('HIGH_R_LOW_L'), 0.52) };
+HERO_ACTIONS.CROSS2 = { ...HERO_ACTIONS.CROSS, keys: withEnd(cut('HIGH_L_LOW_R'), 0.52) };
+HERO_ACTIONS.L1B = { ...HERO_ACTIONS.L1B, dur: 0.52, active: [0.13, 0.28], chainAt: 0.3, keys: withEnd(cut('LOW_R_HIGH_L'), 0.52) };
+HERO_ACTIONS.L2B = { ...HERO_ACTIONS.L1B, keys: withEnd(cut('LOW_L_HIGH_R'), 0.52) };
+HERO_ACTIONS.LOWSWEEP = { ...HERO_ACTIONS.LOWSWEEP, dur: 0.55, active: [0.13, 0.29], chainAt: 0.32, keys: withEnd(cut('LOW_SWEEP'), 0.55) };
+HERO_ACTIONS.XCUT = {
+  ...HERO_ACTIONS.XCUT, dur: 0.78, active: [0.12, 0.54], chainAt: 0.56,
+  keys: withEnd([...cut('HIGH_R_LOW_L'), ...cut('HIGH_L_LOW_R', 0.27).slice(1)], 0.78),
+};
+HERO_ACTIONS.BACKCUT = { ...HERO_ACTIONS.L1, dmg: 24, lunge: [0.02, 0.3, -6] };
+// light-combo spins: cocked wind-up, soft-elbow reach turning a full 360, then the arm folds back across
+const spinMove = (base, wind, reach, follow, turn, t) => ({
+  ...base, dur: t + 0.24, active: [0.08, t], chainAt: t + 0.04,
+  keys: [
+    [0, pose(wind, 0)],
+    [0.08, pose(reach, 0, { rootYaw: 0 }), 'out'],
+    [t, pose(reach, 0, { rootYaw: turn }), 'lin'],
+    [t + 0.08, pose(follow, 4, { rootYaw: turn }), 'out'],
+    [t + 0.24, { ...HERO.idle, rootYaw: turn }, 'io'],
+  ],
+});
+HERO_ACTIONS.L4 = spinMove(HERO_ACTIONS.L4, 'R2L', 'SPIN', 'R2L', 2 * Math.PI, 0.38);
+HERO_ACTIONS.SPIN1 = spinMove(HERO_ACTIONS.SPIN1, 'R2L', 'SPIN', 'R2L', 2 * Math.PI, 0.34);
+HERO_ACTIONS.REVSPIN = spinMove(HERO_ACTIONS.REVSPIN, 'L2R', 'SPIN_REV', 'L2R', -2 * Math.PI, 0.36);
+HERO_ACTIONS.RSPIN2 = spinMove(HERO_ACTIONS.RSPIN2, 'R2L', 'SPIN', 'R2L', 2 * Math.PI, 0.5);
+// heavy: wind-up behind the hip -> release (step, hips, arm, blade) -> one turn -> braced follow-through
+HERO_ACTIONS.SPIN_IN = {
+  ...HERO_ACTIONS.SPIN_IN, dur: 0.18,
+  keys: [[0, CHARGE_POSE], [0.06, pose('RELEASE', 0), 'out'], [0.12, pose('RELEASE', 1), 'io'], [0.18, pose('SPIN', 0, { rootYaw: 0 }), 'out']],
+};
+HERO_ACTIONS.SPIN_LOOP = {
+  ...HERO_ACTIONS.SPIN_LOOP,
+  keys: [[0, pose('SPIN', 0, { rootYaw: 0 })], [0.3, pose('SPIN', 0, { rootYaw: 2 * Math.PI }), 'lin']],
+};
+HERO_ACTIONS.SPIN_OUT = {
+  ...HERO_ACTIONS.SPIN_OUT, dur: 0.62, chainAt: 0.32,
+  keys: [[0, pose('SPIN', 0, { rootYaw: 0 })], [0.06, pose('HEAVY_FOLLOW', 0), 'out'], [0.18, pose('HEAVY_FOLLOW', 1), 'out'],
+    [0.3, pose('HEAVY_FOLLOW', 1)], [0.62, HERO.idle, 'io']],
 };
