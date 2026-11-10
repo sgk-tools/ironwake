@@ -93,7 +93,8 @@ const sweepArm = (swing, torsoYaw, lean = 0.15, raise = -1.25) => ({
 });
 
 // spin arm: arm straight out from the shoulder, blade continuing the arm almost level with the ground
-const spinArm = (swing, torsoYaw, crouch = -0.3) => ({ ...sweepArm(swing, torsoYaw, 0.05, -1.5), farmR: [0, 0, 0], handR: [1.6, 0, 0], rootY: crouch });
+// arm lifted a little above the shoulder line so the whole blade rises slightly from hilt to tip
+const spinArm = (swing, torsoYaw, crouch = -0.3) => ({ ...sweepArm(swing, torsoYaw, 0.0, -1.78), farmR: [0, 0, 0], handR: [1.57, 0, 0], rootY: crouch });
 
 export const HERO_ACTIONS = {
   // horizontal slash, right to left
@@ -483,4 +484,56 @@ HERO_ACTIONS.SHOULDER = {
 HERO_ACTIONS.WHEEL = {
   ...HERO_ACTIONS.RFLIP, dmg: 30, up: 3,
   keys: HERO_ACTIONS.RFLIP.keys.map(([t, p, e]) => [t, { ...p, rootY: p.rootY > 0.5 ? 0.55 : p.rootY }, e]),
+};
+
+// ---- unorthodox moves using the ground ----
+// sword planted point-down in front, both hands on the grip
+const PLANT = {
+  pelvis: [0.1, 0, 0], torso: [0.45, 0, 0], head: [-0.2, 0, 0],
+  uarmR: [-1.6, 0, -0.08], farmR: [-0.8, 0, 0], handR: [3.15, 0, 0],
+  uarmL: [-1.6, 0, 0.12], farmL: [-0.85, 0, 0],
+  thighR: [-0.2, 0, -0.2], shinR: [0.3, 0, 0], thighL: [0.1, 0, 0.2], shinL: [0.2, 0, 0], cloak: [0.5, 0, 0], rootY: 0.0,
+};
+// planted-sword whirl: grip the grounded blade and swing the whole body around it twice, legs flung out
+HERO_ACTIONS.PIVOT = {
+  dur: 0.95, active: [0.16, 0.72], chainAt: 0.74, dmg: 26, kb: 10, up: 3, body: 1.9, bodyAll: true, multi: 2, ground: true, sound: 'swingHeavy', type: 'thrust',
+  keys: [
+    [0, HERO.idle],
+    [0.14, { ...PLANT, rootY: 0.0 }, 'out'],
+    [0.72, { ...PLANT, torso: [0.6, 0, 0], thighR: [-0.4, 0, -1.2], shinR: [0.2, 0, 0], thighL: [0.0, 0, 1.0], shinL: [0.3, 0, 0], cloak: [1.3, 0, 0.6], rootY: 0.05, rootYaw: 4 * Math.PI }, 'lin'],
+    [0.95, { ...HERO.idle, rootYaw: 4 * Math.PI }, 'io'],
+  ],
+};
+// pole vault: plant the blade, vault high over it and come down in an overhead slam
+HERO_ACTIONS.VAULT = {
+  dur: 1.0, active: [0.62, 0.72], impact: 0.7, chainAt: 0.8, dmg: 48, kb: 10, up: 7, radius: 3.4, heavy: true, ground: true, lunge: [0.1, 0.62, 7], sound: 'swingHeavy', type: 'slam',
+  keys: [
+    [0, HERO.idle],
+    [0.14, { ...PLANT, rootY: -0.05 }, 'out'],
+    [0.38, { ...PLANT, uarmR: [-2.4, 0, -0.1], uarmL: [-2.4, 0, 0.1], farmR: [-0.1, 0, 0], handR: [2.9, 0, 0], thighR: [-1.6, 0, 0], shinR: [2.0, 0, 0], thighL: [-1.4, 0, 0], shinL: [1.9, 0, 0], cloak: [0.2, 0, 0], rootY: 1.7, rootPitch: -0.4 }, 'out'],
+    [0.55, { pelvis: [0, 0, 0], torso: [-0.4, 0, 0], head: [0.1, 0, 0], uarmR: [-2.9, 0, -0.15], farmR: [-0.6, 0, 0], handR: [0.05, 0, 0],
+      uarmL: [-2.7, 0, 0.2], farmL: [-0.7, 0, 0], thighR: [-1.0, 0, 0], shinR: [1.2, 0, 0], thighL: [-0.4, 0, 0], shinL: [0.8, 0, 0], rootY: 1.3 }, 'io'],
+    [0.7, { pelvis: [0.2, 0, 0], torso: [0.7, 0, 0], head: [-0.4, 0, 0], uarmR: [-0.75, 0, -0.1], farmR: [-0.15, 0, 0], handR: [0.35, 0, 0],
+      uarmL: [-0.85, 0, 0.15], farmL: [-0.3, 0, 0], thighR: [-1.0, 0, 0], shinR: [1.1, 0, 0], thighL: [0.5, 0, 0], shinL: [0.7, 0, 0], cloak: [1.0, 0, 0], rootY: -0.42 }, 'in'],
+    [1.0, HERO.idle, 'io'],
+  ],
+};
+// ground drag: sprint with the blade scraping the earth behind, then rip it up in a rising cut
+const DRAGPOSE = (s) => ({
+  pelvis: [0, 0.15 * s, 0], torso: [0.45, -0.25, 0], head: [-0.25, 0.2, 0],
+  uarmR: [0.55, 0, -0.35], farmR: [-0.25, 0, 0], handR: [2.0, 0, 0],
+  uarmL: [-0.7 * s, 0, 0.2], farmL: [-0.8, 0, 0],
+  thighR: [-0.9 * s - 0.2, 0, 0], thighL: [0.9 * s - 0.2, 0, 0], shinR: [0.5 + 0.6 * Math.max(0, s), 0, 0], shinL: [0.5 + 0.6 * Math.max(0, -s), 0, 0],
+  cloak: [1.1, 0, 0], rootY: -0.12,
+});
+HERO_ACTIONS.DRAG = {
+  dur: 0.75, active: [0.38, 0.52], chainAt: 0.54, dmg: 34, kb: 4, up: 8, heavy: true, ground: true, lunge: [0.04, 0.4, 9], sound: 'swingHeavy', type: 'sweep',
+  keys: [
+    [0, HERO.idle],
+    [0.1, DRAGPOSE(1), 'out'],
+    [0.22, DRAGPOSE(-1)],
+    [0.34, DRAGPOSE(1)],
+    [0.52, HERO_ACTIONS.UPPER.keys[2][1], 'out'],
+    [0.75, HERO.idle, 'io'],
+  ],
 };

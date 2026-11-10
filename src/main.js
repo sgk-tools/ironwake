@@ -577,10 +577,10 @@ function startAction(name) {
 function comboChain() {
   const lv = hero.level;
   if (hero.rageT > 0) {
-    return [['L1', 'L1B', 'LOWSWEEP'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN'], ['RSPIN2'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+    return [['L1', 'L1B', 'LOWSWEEP'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN'], ['RSPIN2', 'PIVOT'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
-  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL'],
-    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP']] : []), ...(lv >= 6 ? [['L6']] : [])];
+  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG'],
+    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'PIVOT']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG']] : []), ...(lv >= 6 ? [['L6', 'VAULT']] : [])];
 }
 function pickFrom(pool, prev) {
   const opts = pool.filter(n => n !== prev);
@@ -602,7 +602,7 @@ function pickLight(prev) {
   return pickFrom(chain[hero.comboIdx], prev);
 }
 // heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
-const FINISHERS = { 1: 'UPPER', 2: 'FIN2', 3: 'RSPIN2', 4: 'L5', 5: 'RLEAP' };
+const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'PIVOT'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
 const LEVEL_MAX = 10;
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + 0.07 * (hero.level - 1);
@@ -720,7 +720,7 @@ function updateHero(dt) {
         // heavy mid-combo: a finisher that depends on how many light hits came before
         const n = h.lightCount || 0;
         if (n <= 0) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
-        else { startAction(FINISHERS[Math.min(n, 5)]); h.lightCount = 0; }
+        else { startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
       } else startAction(pickLight(a.name));
     } else if (a.t >= d.dur && a.queued === 'counter') {
       h.lightCount = 1; startAction('L4');
@@ -761,6 +761,7 @@ function updateHero(dt) {
   const a = h.act, attacking = a && a.def.type && a.t >= a.def.active[0] - 0.05 && a.t <= a.def.active[1] + 0.05;
   tmpV.copy(SWORD_BASE); h.sword.localToWorld(tmpV);
   fx.trailPush(tmpV, h.tip, attacking);
+  if (a && a.def.ground && h.tip.y < 0.25 && Math.random() < 0.7) fx.spark(h.tip.x, 0.05, h.tip.z, 3);
   if (a && a.def.type && a.t >= a.def.active[0] && a.t <= a.def.active[1]) heroHits(a);
   if (a && a.def.impact && !a.hitDone && a.t >= a.def.impact) { a.hitDone = true; impact(a); }
   // pickups
@@ -809,7 +810,7 @@ function heroHits(a) {
   const bodyHit = (x, z, r) => {
     if (!d.body) return false;
     const dx = x - h.x, dz = z - h.z, dist = Math.hypot(dx, dz);
-    return dist < d.body + r && Math.abs(angLerp(h.face, Math.atan2(dx, dz), 1) - h.face) < 1.1;
+    return dist < d.body + r && (d.bodyAll || Math.abs(angLerp(h.face, Math.atan2(dx, dz), 1) - h.face) < 1.1);
   };
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
@@ -868,7 +869,7 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
   }
 }
 
-const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2', 'REVSPIN']);
+const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2', 'REVSPIN', 'PIVOT']);
 function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;
