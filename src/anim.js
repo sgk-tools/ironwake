@@ -239,6 +239,29 @@ export const HERO_ACTIONS = {
       [0.95, HERO.idle, 'io'],
     ],
   },
+  // ---- combo extensions unlocked by level ----
+  // Lv2: one full turning backhand cut
+  L4: {
+    dur: 0.56, active: [0.08, 0.38], chainAt: 0.4, dmg: 30, kb: 7, heavy: true, lunge: [0.08, 0.38, 3.5], sound: 'swingHeavy', type: 'sweep',
+    keys: [
+      [0, { ...sweepArm(-0.2, -0.6, 0.3), rootYaw: 0.18, rootY: -0.25 }],
+      [0.08, { ...sweepArm(-0.25, -0.65, 0.3), rootYaw: 0.18, rootY: -0.3 }, 'out'],
+      [0.38, { ...sweepArm(0.5, 0.3, 0.25), rootYaw: 0.18 + 2 * Math.PI, rootY: -0.25 }, 'lin'],
+      [0.56, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
+    ],
+  },
+  // Lv4: double thrust
+  L5: {
+    dur: 0.64, active: [0.1, 0.44], chainAt: 0.46, dmg: 26, kb: 6, multi: 2, lunge: [0.05, 0.42, 6], sound: 'swing', type: 'thrust', reach: 0.35,
+    keys: [
+      [0, HERO.idle],
+      [0.1, { pelvis: [0, -0.4, 0], torso: [0.1, -0.5, 0], uarmR: [0.55, 0, -0.25], farmR: [-1.6, 0, 0], handR: [1.05, 0, 0], uarmL: [-0.6, 0, 0.3], farmL: [-1.0, 0, 0], thighR: [0.4, 0, 0], shinR: [0.6, 0, 0], thighL: [-0.7, 0, 0], shinL: [0.4, 0, 0], cloak: [0.5, 0, 0], rootY: -0.25 }, 'out'],
+      [0.2, { pelvis: [0.15, 0.3, 0], torso: [0.45, 0.3, 0], uarmR: [-1.55, 0, -0.05], farmR: [0, 0, 0], handR: [1.0, 0, 0], uarmL: [0.4, 0, 0.3], farmL: [-0.3, 0, 0], thighR: [-1.0, 0, 0], shinR: [0.8, 0, 0], thighL: [0.7, 0, 0], shinL: [0.3, 0, 0], cloak: [1.1, 0, 0], rootY: -0.35 }, 'out'],
+      [0.3, { pelvis: [0, -0.3, 0], torso: [0.2, -0.4, 0], uarmR: [0.4, 0, -0.25], farmR: [-1.5, 0, 0], handR: [1.05, 0, 0], uarmL: [-0.5, 0, 0.3], farmL: [-1.0, 0, 0], thighR: [-0.6, 0, 0], shinR: [0.7, 0, 0], thighL: [0.4, 0, 0], shinL: [0.4, 0, 0], cloak: [0.7, 0, 0], rootY: -0.3 }, 'io'],
+      [0.42, { pelvis: [0.2, 0.35, 0], torso: [0.5, 0.35, 0], uarmR: [-1.6, 0, -0.05], farmR: [0, 0, 0], handR: [1.0, 0, 0], uarmL: [0.4, 0, 0.3], farmL: [-0.3, 0, 0], thighR: [-1.1, 0, 0], shinR: [0.8, 0, 0], thighL: [0.8, 0, 0], shinL: [0.3, 0, 0], cloak: [1.2, 0, 0], rootY: -0.38 }, 'out'],
+      [0.64, HERO.idle, 'io'],
+    ],
+  },
   DODGE: {
     dur: 0.5, iframes: [0.0, 0.36], lunge: [0, 0.42, 12],
     keys: [
@@ -366,3 +389,6 @@ export function bossPose(state, t, phase, out) {
     default: return lerpPose(BIDLE, BIDLE, 0, out);
   }
 }
+
+// Lv6 finisher: a leaping slam like the rage version with a slightly smaller shockwave
+HERO_ACTIONS.L6 = { ...HERO_ACTIONS.RLEAP, dmg: 50, radius: 3.8 };

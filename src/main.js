@@ -201,6 +201,7 @@ class Crowd {
 
 // ======================================================================= world
 const ARENA = 46;
+let groundMat = null;
 const colliders = []; // {x,z,r}
 function buildWorld() {
   for (const t of [A.gcol, A.gnrm, A.grough]) {
@@ -208,7 +209,7 @@ function buildWorld() {
     t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   }
   A.gcol.colorSpace = THREE.SRGBColorSpace;
-  const gmat = new THREE.MeshStandardMaterial({ map: A.gcol, normalMap: A.gnrm, roughnessMap: A.grough, roughness: 1, metalness: 0, color: 0xb4aaa6, normalScale: new THREE.Vector2(1.4, 1.4) });
+  const gmat = groundMat = new THREE.MeshStandardMaterial({ map: A.gcol, normalMap: A.gnrm, roughnessMap: A.grough, roughness: 1, metalness: 0, color: 0xb4aaa6, normalScale: new THREE.Vector2(1.4, 1.4) });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), gmat);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
@@ -457,19 +458,59 @@ function dotCanvas() {
 const input = new Input($('#stick-zone'), { attack: $('#btn-attack'), heavy: $('#btn-heavy'), dodge: $('#btn-dodge'), rage: $('#btn-rage') });
 const sfx = new Sfx();
 let fx, crowd, hero, boss;
-const G = { substeps: 1, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
+const G = { substeps: 1, stageIdx: 0, introT: 0, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
 
-const WAVES = [
-  { label: '第一波', sub: '亡者の群れを斬り払え', total: 40, max: 22, brute: 0, rate: 0.35 },
-  { label: '第二波', sub: '重装の亡者が混じっている', total: 60, max: 28, brute: 0.14, rate: 0.28 },
-  { label: '第三波', sub: '戦場が亡者で埋め尽くされる', total: 80, max: 34, brute: 0.22, rate: 0.22 },
-  { label: '決戦', sub: '角の魔騎士を討て', total: 9999, max: 12, brute: 0.2, rate: 1.2, boss: true },
+// Each stage: its waves (mix = spawn weights per enemy type), its boss and its lighting.
+const STAGES = [
+  {
+    name: '第一戦場', place: '亡者の荒野',
+    boss: { name: '角の魔騎士', hp: 3200, speed: 1.0, dmg: 1.0, tint: [1, 1, 1], enrage: false },
+    env: { fog: 0x150c0b, density: 0.026, sky: 0x8a7e86, gnd: 0x2a1a14, hemi: 1.1, sun: 0xffbf98, sunI: 3.2, ground: 0xb4aaa6, envI: 1.6, rim: 0x9aa6ff },
+    waves: [
+      { label: '第一波', sub: '亡者の群れを斬り払え', total: 40, max: 22, mix: { grunt: 1 }, rate: 0.35 },
+      { label: '第二波', sub: '重装の亡者が混じっている', total: 60, max: 28, mix: { grunt: 0.86, brute: 0.14 }, rate: 0.28 },
+      { label: '第三波', sub: '戦場が亡者で埋め尽くされる', total: 80, max: 34, mix: { grunt: 0.78, brute: 0.22 }, rate: 0.22 },
+      { label: '決戦', sub: '角の魔騎士を討て', total: 9999, max: 12, mix: { grunt: 0.8, brute: 0.2 }, rate: 1.2, boss: true },
+    ],
+  },
+  {
+    name: '第二戦場', place: '灰の城塞跡',
+    boss: { name: '灰の処刑人', hp: 4600, speed: 1.22, dmg: 1.15, tint: [0.62, 0.7, 0.85], enrage: false },
+    env: { fog: 0x0c1016, density: 0.03, sky: 0x7d8aa6, gnd: 0x14161c, hemi: 1.15, sun: 0xa9bcff, sunI: 2.6, ground: 0x8c94a0, envI: 1.1, rim: 0xffb080 },
+    waves: [
+      { label: '第一波', sub: '槍を構えた亡者が駆けてくる', total: 55, max: 26, mix: { grunt: 0.6, lancer: 0.4 }, rate: 0.3 },
+      { label: '第二波', sub: '重装の亡者が隊列を組む', total: 75, max: 30, mix: { grunt: 0.45, lancer: 0.3, brute: 0.25 }, rate: 0.25 },
+      { label: '第三波', sub: '城塞の残兵がすべて押し寄せる', total: 95, max: 36, mix: { grunt: 0.4, lancer: 0.35, brute: 0.25 }, rate: 0.2 },
+      { label: '決戦', sub: '灰の処刑人を討て', total: 9999, max: 14, mix: { grunt: 0.5, lancer: 0.5 }, rate: 1.0, boss: true },
+    ],
+  },
+  {
+    name: '第三戦場', place: '血の沼地',
+    boss: { name: '双角の魔将', hp: 6200, speed: 1.3, dmg: 1.3, tint: [1.0, 0.5, 0.45], enrage: true },
+    env: { fog: 0x1c0606, density: 0.032, sky: 0x9a5a5a, gnd: 0x220808, hemi: 1.05, sun: 0xff7a5a, sunI: 2.9, ground: 0x8a5a52, envI: 1.3, rim: 0xff5030 },
+    waves: [
+      { label: '第一波', sub: '沼から亡者が這い上がる', total: 70, max: 30, mix: { grunt: 0.55, lancer: 0.3, brute: 0.15 }, rate: 0.26 },
+      { label: '第二波', sub: '重装の亡者が群れをなす', total: 90, max: 34, mix: { grunt: 0.35, lancer: 0.3, brute: 0.35 }, rate: 0.22 },
+      { label: '第三波', sub: '最後の軍勢が押し寄せる', total: 120, max: 40, mix: { grunt: 0.4, lancer: 0.35, brute: 0.25 }, rate: 0.18 },
+      { label: '決戦', sub: '双角の魔将を討て', total: 9999, max: 16, mix: { grunt: 0.4, lancer: 0.4, brute: 0.2 }, rate: 0.9, boss: true },
+    ],
+  },
 ];
+const stage = () => STAGES[G.stageIdx];
+const waveDef = () => stage().waves[G.waveIdx];
+function pickType(mix) {
+  let r = Math.random(), last = 'grunt';
+  for (const [k, w] of Object.entries(mix)) { last = k; if ((r -= w) <= 0) return k; }
+  return last;
+}
 
 const ENEMY = {
   grunt: { hp: 40, speed: 3.1, dmg: 45, range: 1.65, wind: 0.62, scale: 0.97, radius: 0.42, weapon: 'gsword', armor: false, color: new THREE.Color(1, 1, 1) },
-  brute: { hp: 190, speed: 2.3, dmg: 85, range: 2.2, wind: 0.9, scale: 1.38, radius: 0.6, weapon: 'club', armor: true, color: new THREE.Color(0.72, 0.62, 0.58) },
+  brute: { hp: 190, speed: 2.3, dmg: 85, range: 2.2, wind: 0.9, scale: 1.38, radius: 0.6, weapon: 'club', armor: true, color: new THREE.Color(0.72, 0.62, 0.58), exp: 5 },
+  // fast spear-carrier that lunges forward when it strikes
+  lancer: { hp: 32, speed: 4.3, dmg: 55, range: 2.7, wind: 0.5, scale: 0.95, radius: 0.42, weapon: 'spear', armor: false, color: new THREE.Color(0.74, 0.8, 0.92), lunge: 7, exp: 2 },
 };
+ENEMY.grunt.exp = 1;
 const enemies = [];
 
 function makeHero() {
@@ -486,18 +527,19 @@ function makeHero() {
     rig, mat, sword: sw, x: 0, z: 0, vx: 0, vz: 0, face: 0, hp: 1000, maxHp: 1000, hpLag: 1000,
     rage: 0, rageT: 0, act: null, queued: null, iframe: 0, phase: 0, speedAmt: 0, pose: {}, target: {},
     lastBase: new THREE.Vector3(), lastTip: new THREE.Vector3(), base: new THREE.Vector3(), tip: new THREE.Vector3(),
-    attackId: 0, dead: false,
+    attackId: 0, dead: false, level: 1, exp: 0, comboIdx: 0, spinLoops: 0,
   };
 }
 
 function makeBoss() {
-  const rig = buildRig(A.boss, A.skel);
+  const bmat = A.boss.torso.material.clone();
+  const rig = buildRig(A.boss, A.skel, { material: bmat });
   const axe = new THREE.Mesh(A.weapons.bossaxe.geometry, A.weapons.bossaxe.material);
   axe.castShadow = true; axe.rotation.x = Math.PI / 2; axe.position.set(0, -0.085, 0);
   rig.j.handR.add(axe);
   rig.root.scale.setScalar(2.3);
   scene.add(rig.root);
-  return { rig, axe, x: 0, z: 30, face: Math.PI, hp: 3200, maxHp: 3200, state: 'roar', t: 0, phase: 0, poise: 0, pose: {}, target: {}, cd: 2, lastHit: -1, dead: false, deadT: 0, hitDone: false, tx: 0, tz: 0 };
+  return { rig, axe, mat: bmat, speed: 1, dmgMul: 1, enraged: false, x: 0, z: 30, face: Math.PI, hp: 3200, maxHp: 3200, state: 'roar', t: 0, phase: 0, poise: 0, pose: {}, target: {}, cd: 2, lastHit: -1, dead: false, deadT: 0, hitDone: false, tx: 0, tz: 0 };
 }
 
 // ======================================================================= hero logic
@@ -529,20 +571,56 @@ function startAction(name) {
 
 // light attack choice: running start -> thrust; during a combo the stick direction relative to
 // the hero picks a variation (back = rising launcher, side = diagonal cut); rage has its own chain
+// The combo grows with level: Lv2 adds a turning backhand, Lv4 a double thrust, Lv6 a leaping slam.
+function comboChain() {
+  const lv = hero.level;
+  if (hero.rageT > 0) {
+    return ['L1', 'RFLIP', 'L2', 'RSPIN2', ...(lv >= 3 ? ['L4'] : []), ...(lv >= 5 ? ['RFLIP'] : []), 'RLEAP'];
+  }
+  return ['L1', 'L2', 'L3', ...(lv >= 2 ? ['L4'] : []), ...(lv >= 4 ? ['L5'] : []), ...(lv >= 6 ? ['L6'] : [])];
+}
 function pickLight(prev) {
   const [mx, my] = input.move();
   const moving = Math.hypot(mx, my) > 0.3;
-  const rage = hero.rageT > 0;
-  if (!prev) return moving ? 'DASH' : 'L1';
+  if (!prev) { hero.comboIdx = 0; return moving ? 'DASH' : 'L1'; }
   if (moving) {
     const rel = Math.abs(angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face);
     if (rel > 2.3) return 'UPPER';
     if (rel > 0.8) return 'CROSS';
   }
-  const chain = rage
-    ? { L1: 'RFLIP', RFLIP: 'L2', L2: 'RSPIN2', RSPIN2: 'RLEAP', RLEAP: 'L1' }
-    : { L1: 'L2', L2: 'L3', L3: 'L1' };
-  return chain[prev] || (rage ? 'RFLIP' : 'L2');
+  const chain = comboChain();
+  hero.comboIdx = (hero.comboIdx + 1) % chain.length;
+  return chain[hero.comboIdx];
+}
+const LEVEL_MAX = 10;
+const expNeed = (lv) => 14 + lv * 10;
+const dmgMul = () => 1 + 0.07 * (hero.level - 1);
+const LEVEL_PERKS = {
+  2: '連撃が4段に（回転返し斬り）',
+  3: '覚醒連撃に回転返し斬りが加わる',
+  4: '連撃が5段に（二段突き）',
+  5: '覚醒連撃に縦回転斬りがもう一度加わる',
+  6: '連撃が6段に（大跳躍叩きつけ）',
+};
+function gainExp(n) {
+  const h = hero;
+  if (h.level >= LEVEL_MAX) return;
+  h.exp += n;
+  while (h.level < LEVEL_MAX && h.exp >= expNeed(h.level)) {
+    h.exp -= expNeed(h.level); h.level++;
+    h.maxHp += 90; h.hp = Math.min(h.maxHp, h.hp + 90 + h.maxHp * 0.25);
+    const perk = LEVEL_PERKS[h.level] || '攻撃力と体力が上がった・回転斬りの回転数が増えた';
+    showLevelUp(h.level, perk);
+    sfx.play('heal'); fx.ring(h.x, h.z, 3, 0xffd080, 0.6);
+  }
+  if (h.level >= LEVEL_MAX) h.exp = 0;
+}
+let lvTimer = 0;
+function showLevelUp(lv, perk) {
+  const el = $('#levelup');
+  $('#lu-lv').textContent = `Lv ${lv}`; $('#lu-perk').textContent = perk;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(lvTimer); lvTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 function wrapAng(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
 
@@ -606,7 +684,7 @@ function updateHero(dt) {
       // one rotation per loop; keep spinning while heavy is held (more loops when raging)
       h.pose.rootYaw -= Math.PI * 2;
       h.spinLoops = (h.spinLoops || 0) + 1;
-      const max = h.rageT > 0 ? 10 : 6;
+      const max = (h.rageT > 0 ? 10 : 6) + Math.floor((h.level - 1) / 2);
       if (input.held.has('heavy') && h.spinLoops < max) startAction('SPIN_LOOP');
       else startAction('SPIN_OUT');
     } else if (d.type && a.t >= d.chainAt && a.queued) {
@@ -692,7 +770,7 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 }
 
 function heroHits(a) {
-  const d = a.def, h = hero, mult = h.rageT > 0 ? 1.6 : 1;
+  const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul();
   let any = false;
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
@@ -709,7 +787,7 @@ function heroHits(a) {
 }
 
 function impact(a) {
-  const d = a.def, h = hero, mult = h.rageT > 0 ? 1.6 : 1;
+  const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul();
   const cx = a.name === 'RAGE' ? h.x : h.tip.x, cz = a.name === 'RAGE' ? h.z : h.tip.z;
   fx.ring(cx, cz, d.radius * 1.2, a.name === 'RAGE' ? 0xff3010 : 0xffa060, 0.5);
   fx.spark(cx, 0.2, cz, 26);
@@ -742,7 +820,7 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz) {
   fx.decal(e.x + dx * 0.6, e.z + dz * 0.6, 0.9 + Math.random() * 0.8);
   if (e.hp <= 0) {
     e.dead = true; e.state = 'dead'; e.t = 0; e.vy = (up || 2) * (0.6 + Math.random() * 0.6);
-    e.spin = (Math.random() - 0.5) * 6; G.ko++;
+    e.spin = (Math.random() - 0.5) * 6; G.ko++; gainExp(def.exp || 1);
     e.face = Math.atan2(-dx, -dz);
     if (Math.random() < (e.type === 'brute' ? 0.4 : 0.06)) fx.orb(e.x, e.z);
   } else if (!def.armor || heavy) {
@@ -813,6 +891,7 @@ function updateEnemies(dt) {
           if (e.t >= def.wind) { e.state = 'strike'; e.t = 0; e.struck = false; }
           break;
         case 'strike':
+          if (def.lunge && e.t < 0.22) { e.x += Math.sin(e.face) * def.lunge * dt; e.z += Math.cos(e.face) * def.lunge * dt; }
           if (!e.struck && e.t > 0.06) {
             e.struck = true;
             const ang = Math.abs(angLerp(e.face, Math.atan2(dx, dz), 1) - e.face);
@@ -865,6 +944,7 @@ function updateEnemies(dt) {
 // ======================================================================= boss
 function updateBoss(dt) {
   const b = boss; if (!b || b.state === 'hidden') return;
+  dt *= b.speed;
   b.t += dt;
   const dx = hero.x - b.x, dz = hero.z - b.z, dist = Math.hypot(dx, dz), toHero = Math.atan2(dx, dz);
   const turn = (k) => { b.face = angLerp(b.face, toHero, Math.min(1, dt * k)); };
@@ -885,7 +965,7 @@ function updateBoss(dt) {
       if (!b.hitDone && b.t > 0.12) {
         b.hitDone = true; sfx.play('swingHeavy');
         const ang = Math.abs(angLerp(b.face, toHero, 1) - b.face);
-        if (dist < 6.2 && ang < 1.4) hurtHero(160, b.x, b.z);
+        if (dist < 6.2 && ang < 1.4) hurtHero(160 * b.dmgMul, b.x, b.z);
       }
       if (b.t > 1.0) setBoss('walk', 0.8 + Math.random());
       break;
@@ -899,14 +979,14 @@ function updateBoss(dt) {
       if (!b.hitDone && b.t > 0.14) {
         b.hitDone = true; b.tele = false; sfx.play('slam'); G.shake = 0.9;
         fx.ring(b.tx, b.tz, 5.2, 0xff5020, 0.6); fx.spark(b.tx, 0.3, b.tz, 30);
-        if (Math.hypot(hero.x - b.tx, hero.z - b.tz) < 4.1) hurtHero(220, b.tx, b.tz);
+        if (Math.hypot(hero.x - b.tx, hero.z - b.tz) < 4.1) hurtHero(220 * b.dmgMul, b.tx, b.tz);
       }
       if (b.t > 1.2) setBoss('walk', 1 + Math.random());
       break;
     case 'chargeWind': turn(5); if (b.t > 0.7) { setBoss('charge'); sfx.play('roar', 0.5); } break;
     case 'charge':
       b.x += Math.sin(b.face) * 15 * dt; b.z += Math.cos(b.face) * 15 * dt; b.phase += dt * 12;
-      if (!b.hitDone && dist < 2.3) { b.hitDone = true; hurtHero(140, b.x, b.z); }
+      if (!b.hitDone && dist < 2.3) { b.hitDone = true; hurtHero(140 * b.dmgMul, b.x, b.z); }
       for (const e of enemies) if (!e.dead && Math.hypot(e.x - b.x, e.z - b.z) < 2) { e.vx += Math.sin(b.face) * 6; e.vz += Math.cos(b.face) * 6; }
       if (b.t > 0.95 || Math.hypot(b.x, b.z) > ARENA) setBoss('walk', 1.2);
       break;
@@ -940,23 +1020,34 @@ function damageBoss(dmg) {
   fx.blood(b.x - dx / l * 0.8, 2.4, b.z - dz / l * 0.8, -dx / l, -dz / l, 16, 1.2);
   fx.spark(b.x - dx / l, 2.2, b.z - dz / l, 6);
   if (b.hp <= 0 && !b.dead) {
-    b.hp = 0; b.dead = true; setBoss('dead'); b.deadT = 0; G.slowmo = 0.25; G.ko++; G.shake = 1;
+    b.hp = 0; b.dead = true; setBoss('dead'); b.deadT = 0; G.slowmo = 0.25; G.ko++; G.shake = 1; gainExp(40);
     sfx.play('roar', 0.8);
     for (const e of enemies) if (!e.dead) { e.hp = 0; damageEnemy(e, 1, 8, 4, true, b.x, b.z); }
     return;
   }
   if (b.poise > 420 && b.state !== 'stagger') { b.poise = 0; setBoss('stagger'); sfx.play('clang'); }
+  // enraged phase below half health: faster, plus a ring of reinforcements
+  if (b.enrageOn && !b.enraged && b.hp < b.maxHp * 0.5) {
+    b.enraged = true; b.speed *= 1.25; b.dmgMul *= 1.15;
+    b.mat.emissive.setRGB(0.25, 0.02, 0.0);
+    showBanner('激昂', `${stage().boss.name}が怒り狂う`); sfx.play('roar'); G.shake = 0.8;
+    for (let i = 0; i < 8; i++) spawnEnemy(i % 2 ? 'lancer' : 'grunt');
+  }
 }
 
 // ======================================================================= waves
 function nextWave() {
   G.waveIdx++;
-  const w = WAVES[G.waveIdx];
+  const w = waveDef();
   G.spawnLeft = w.total; G.spawnT = 1.5;
   showBanner(w.label, w.sub);
   sfx.play('wave');
   if (w.boss) {
     boss = boss || makeBoss();
+    const bc = stage().boss;
+    boss.maxHp = boss.hp = bc.hp; boss.speed = bc.speed; boss.dmgMul = bc.dmg; boss.enrageOn = bc.enrage; boss.enraged = false;
+    boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint); boss.mat.emissive.setRGB(0, 0, 0);
+    $('#boss .name').textContent = bc.name;
     // enter from the top of the screen (camera looks toward +Z), kept inside the arena
     boss.x = hero.x * 0.6; boss.z = hero.z + 14;
     const br = Math.hypot(boss.x, boss.z); if (br > ARENA - 4) { boss.x *= (ARENA - 4) / br; boss.z *= (ARENA - 4) / br; }
@@ -969,12 +1060,13 @@ function nextWave() {
 }
 
 function updateWaves(dt) {
-  const w = WAVES[G.waveIdx]; if (!w) return;
+  if (G.waveIdx < 0) { G.introT -= dt; if (G.introT <= 0) nextWave(); return; }
+  const w = waveDef(); if (!w) return;
   const alive = enemies.filter(e => !e.dead).length;
   G.spawnT -= dt;
   if (G.spawnLeft > 0 && alive < w.max && G.spawnT <= 0) {
     if (!w.boss || boss.state !== 'roar') {
-      spawnEnemy(Math.random() < w.brute ? 'brute' : 'grunt');
+      spawnEnemy(pickType(w.mix));
       G.spawnLeft--;
     }
     G.spawnT = w.rate * (alive < 6 ? 0.3 : 1);
@@ -983,7 +1075,7 @@ function updateWaves(dt) {
     G.waveDelay += dt;
     if (G.waveDelay > 1.4) { G.waveDelay = 0; nextWave(); }
   }
-  UI.objective.textContent = w.boss ? '角の魔騎士を討て' : `残り ${G.spawnLeft + alive} 体`;
+  UI.objective.textContent = w.boss ? `${stage().boss.name}を討て` : `残り ${G.spawnLeft + alive} 体`;
 }
 
 let bannerTimer = 0;
@@ -999,7 +1091,7 @@ function updateCamera(dt) {
   const portrait = window.innerWidth < window.innerHeight;
   const dist = portrait ? 11 : 8.6, height = portrait ? 9.6 : 7.0;
   let fx_ = hero.x, fz = hero.z;
-  if (boss && !boss.dead && boss.state !== 'hidden' && G.waveIdx === 3) {
+  if (boss && !boss.dead && boss.state !== 'hidden' && waveDef()?.boss) {
     const d = Math.hypot(boss.x - hero.x, boss.z - hero.z);
     if (d < 16) { fx_ += (boss.x - hero.x) * 0.25; fz += (boss.z - hero.z) * 0.25; }
   }
@@ -1033,6 +1125,8 @@ function updateHUD(dt) {
   const raging = h.rageT > 0;
   if (hudCache.raging !== raging) { hudCache.raging = raging; document.body.classList.toggle('raging', raging); }
   setText(UI.ko, 'ko', String(G.ko));
+  setText($('#lv'), 'lv', `Lv${h.level}`);
+  setStyle($('#exp-fill'), 'exp', `scaleX(${h.level >= LEVEL_MAX ? 1 : (h.exp / expNeed(h.level)).toFixed(3)})`);
   if (G.comboT > 0) {
     G.comboT -= dt;
     setText(UI.comboN, 'cn', String(G.combo));
@@ -1044,9 +1138,29 @@ function updateHUD(dt) {
 }
 
 // ======================================================================= flow
-function resetGame() {
+function applyEnv(env) {
+  scene.fog.color.setHex(env.fog); scene.fog.density = env.density; scene.background = scene.fog.color;
+  hemi.color.setHex(env.sky); hemi.groundColor.setHex(env.gnd); hemi.intensity = env.hemi;
+  sun.color.setHex(env.sun); sun.intensity = env.sunI; rim.color.setHex(env.rim);
+  if (groundMat) groundMat.color.setHex(env.ground);
+  scene.environmentIntensity = env.envI;
+}
+
+// progress (stage reached, level) kept per viewer; the game works without it
+const SAVE_KEY = 'ironwake-save-v1';
+function loadSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { return null; } }
+function writeSave(d) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) { /* storage unavailable */ } }
+function refreshContinue() {
+  const sv = loadSave(), btn = $('#btn-continue');
+  if (sv && STAGES[sv.stage]) { btn.hidden = false; btn.textContent = `続きから（${STAGES[sv.stage].name}・Lv${sv.level}）`; }
+  else btn.hidden = true;
+}
+
+function resetGame(keepLevel = false) {
   for (const e of enemies) e.dead = true;
   enemies.length = 0; fx.clear(); crowd.begin(); crowd.end();
+  if (!keepLevel) { hero.level = 1; hero.exp = 0; }
+  hero.maxHp = 1000 + 90 * (hero.level - 1); hero.comboIdx = 0;
   hero.x = 0; hero.z = 0; hero.face = 0; hero.hp = hero.maxHp; hero.hpLag = hero.maxHp; hero.rage = 0; hero.rageT = 0;
   hero.act = null; hero.dead = false; hero.iframe = 0; hero.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0;
   if (boss) { boss.rig.root.visible = false; boss.state = 'hidden'; boss.hp = boss.maxHp; boss.dead = false; boss.poise = 0; }
@@ -1056,12 +1170,15 @@ function resetGame() {
   for (const k in hudCache) delete hudCache[k];
 }
 
-function startGame() {
+function startGame(stageIdx = 0, level = 1, exp = 0) {
   sfx.unlock(); sfx.play('ui'); sfx.startMusic();
-  resetGame();
+  hero.level = level; hero.exp = exp;
+  resetGame(true);
+  G.stageIdx = stageIdx; applyEnv(stage().env);
   UI.title.hidden = true; UI.result.hidden = true; UI.pause.hidden = true; UI.hud.hidden = false;
   G.state = 'play'; input.clear();
-  nextWave();
+  // stage title card, then the first wave
+  showBanner(stage().name, stage().place); G.introT = 2.6;
 }
 
 function endGame(win) {
@@ -1072,8 +1189,15 @@ function endGame(win) {
   const t = G.playTime;
   const score = G.ko * 100 + G.maxCombo * 40 + (win ? 20000 : 0) - Math.floor(t) * 10;
   const rank = !win ? '—' : score > 38000 ? 'S' : score > 32000 ? 'A' : score > 26000 ? 'B' : 'C';
-  $('#result-title').textContent = win ? '討伐完了' : '力尽きた';
-  $('#result-sub').textContent = win ? '角の魔騎士は鉄塊の前に倒れた' : `${WAVES[G.waveIdx]?.label ?? ''}で倒れた`;
+  const st = stage(), next = STAGES[G.stageIdx + 1];
+  const last = win && !next;
+  $('#result-title').textContent = last ? '全戦場制覇' : win ? `${st.name} 突破` : '力尽きた';
+  $('#result-sub').textContent = win ? `${st.boss.name}は鉄塊の前に倒れた` : `${st.name}・${waveDef()?.label ?? ''}で倒れた`;
+  $('#r-lv').textContent = hero.level;
+  const nb = $('#btn-next');
+  nb.hidden = !win || !next;
+  if (win && next) { nb.textContent = `次の戦場へ（${next.name}）`; writeSave({ stage: G.stageIdx + 1, level: hero.level, exp: hero.exp }); }
+  if (last) writeSave({ stage: G.stageIdx, level: hero.level, exp: hero.exp, cleared: true });
   $('#r-ko').textContent = G.ko; $('#r-combo').textContent = G.maxCombo;
   $('#r-time').textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
   $('#r-rank').textContent = rank;
@@ -1175,7 +1299,7 @@ async function boot() {
   try {
     buildWorld();
     fx = new FX();
-    crowd = new Crowd(A.grunt, A.skel, { gsword: A.weapons.gsword, club: A.weapons.club }, 64);
+    crowd = new Crowd(A.grunt, A.skel, { gsword: A.weapons.gsword, club: A.weapons.club, spear: A.props.spear }, 72);
     hero = makeHero();
     boss = makeBoss(); boss.rig.root.visible = false; boss.state = 'hidden';
     // warm up shaders so the first fight frame does not stall
@@ -1184,17 +1308,20 @@ async function boot() {
     UI.loadText.textContent = `起動に失敗した（${err && err.message || err}）。この表示を伝えてほしい。`;
     console.error(err); return;
   }
-  G.state = 'title';
+  G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES };
 }
 
-UI.start.addEventListener('click', startGame);
-$('#btn-retry').addEventListener('click', startGame);
-$('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; });
+UI.start.addEventListener('click', () => startGame(0, 1, 0));
+$('#btn-continue').addEventListener('click', () => { const sv = loadSave(); if (sv) startGame(sv.stage, sv.level, sv.exp || 0); });
+// retry keeps the level reached on this battlefield
+$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp));
+$('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp));
+$('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; refreshContinue(); });
 $('#btn-pause').addEventListener('click', () => setPaused(true));
 $('#btn-resume').addEventListener('click', () => setPaused(false));
-$('#btn-quit').addEventListener('click', () => { setPaused(false); G.state = 'title'; sfx.stopMusic(); resetGame(); UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false; });
+$('#btn-quit').addEventListener('click', () => { setPaused(false); G.state = 'title'; sfx.stopMusic(); resetGame(); UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false; refreshContinue(); });
 $('#btn-sound').addEventListener('click', (e) => { sfx.unlock(); sfx.setMuted(!sfx.muted); e.currentTarget.classList.toggle('off', sfx.muted); e.currentTarget.setAttribute('aria-pressed', String(sfx.muted)); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play') setPaused(true); });
 

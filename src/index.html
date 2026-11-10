@@ -109,6 +109,14 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 #combo.pop #combo-n { animation: pop 0.18s ease-out; }
 @keyframes pop { from { transform: scale(1.35); } to { transform: scale(1); } }
 
+.lv { font-family: var(--f-display); font-size: 13px; color: var(--ember); letter-spacing: 0.08em; }
+.bar.exp { height: 3px; width: 60%; clip-path: none; }
+#exp-fill { background: #e9c27a; transform: scaleX(0); }
+#levelup { position: absolute; left: 0; right: 0; top: 18%; display: grid; justify-items: center; gap: 2px; opacity: 0; transform: translateY(6px); transition: opacity 0.3s, transform 0.3s; pointer-events: none; }
+#levelup.show { opacity: 1; transform: none; }
+#levelup .lu-head { font-size: 11px; letter-spacing: 0.5em; color: #e9c27a; padding-left: 0.5em; }
+#lu-lv { font-family: var(--f-display); font-size: clamp(26px, 5vw, 38px); color: #fff; text-shadow: 0 0 16px rgba(233,194,122,0.6); }
+#lu-perk { font-size: 12px; letter-spacing: 0.1em; color: var(--ash); background: var(--glass); padding: 3px 12px; }
 #wave-banner { position: absolute; left: 0; right: 0; top: 34%; display: grid; justify-items: center; gap: 6px; opacity: 0; transform: translateY(8px); transition: opacity 0.35s, transform 0.35s; }
 #wave-banner.show { opacity: 1; transform: none; }
 #wave-label { font-family: var(--f-display); font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.4em; padding-left: 0.4em; text-shadow: 0 2px 22px #000; }
@@ -152,10 +160,10 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .panel { display: grid; gap: 16px; justify-items: center; text-align: center; width: min(460px, 100%); }
 .panel h2 { font-family: var(--f-display); font-size: clamp(34px, 6vw, 48px); letter-spacing: 0.3em; padding-left: 0.3em; margin: 0; text-wrap: balance; }
 .panel p { margin: 0; color: var(--ash-dim); font-size: 14px; letter-spacing: 0.06em; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; border-top: 1px solid rgba(233,221,210,0.15); border-bottom: 1px solid rgba(233,221,210,0.15); }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; border-top: 1px solid rgba(233,221,210,0.15); border-bottom: 1px solid rgba(233,221,210,0.15); }
 .stats div { display: grid; gap: 2px; padding: 12px 4px; }
 .stats dt { font-size: 10px; letter-spacing: 0.24em; color: var(--ash-dim); }
-.stats dd { margin: 0; font-family: var(--f-display); font-size: 26px; font-variant-numeric: tabular-nums; }
+.stats dd { margin: 0; font-family: var(--f-display); font-size: clamp(20px, 4vw, 26px); font-variant-numeric: tabular-nums; }
 #r-rank { color: var(--ember); }
 #result:not(.win) h2 { color: #d9a59a; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
@@ -177,9 +185,10 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <div class="title-inner">
     <div class="eyebrow">一騎当千 ダークファンタジー アクション</div>
     <h1 class="logo"><span class="jp">鉄塊の傭兵</span><span class="en">IRONWAKE</span></h1>
-    <p class="lede">身の丈を超える鉄塊を背負い、亡者の軍勢に一人で挑む。三つの波を斬り抜け、角の魔騎士を討て。</p>
+    <p class="lede">身の丈を超える鉄塊を背負い、亡者の軍勢に一人で挑む。荒野、城塞跡、血の沼地。三つの戦場を斬り抜け、魔将を討て。</p>
     <div class="title-actions">
       <button class="btn-primary" id="btn-start">出陣</button>
+      <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
     <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（移動中は突進突き、連撃中に後ろ入力で斬り上げ・横入力で袈裟斬り） ／ <b>重</b>回転斬り（長押しで回転し続ける） ／ <b>避</b>回避 ／ <b>覚醒</b>中は縦回転斬りなど専用の連撃</div>
@@ -191,9 +200,10 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <div id="hurt"></div>
   <div class="top">
     <div class="vitals">
-      <div class="vlabel"><strong>傭兵</strong>体力</div>
+      <div class="vlabel"><strong>傭兵</strong><span id="lv" class="lv">Lv1</span>体力</div>
       <div class="bar"><i id="hp-lag"></i><i id="hp-fill"></i></div>
       <div class="bar rage"><i id="rage-fill"></i></div>
+      <div class="bar exp" aria-label="経験値"><i id="exp-fill"></i></div>
     </div>
     <div class="center-top">
       <div id="objective">残り — 体</div>
@@ -210,6 +220,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
     </div>
   </div>
   <div id="combo" hidden><span id="combo-n">0</span><small>HITS</small></div>
+  <div id="levelup"><span class="lu-head">LEVEL UP</span><span id="lu-lv">Lv 2</span><span id="lu-perk"></span></div>
   <div id="wave-banner"><div id="wave-label">第一波</div><div id="wave-sub"></div></div>
   <div id="stick-zone"><div class="stick-hint">移動</div><div class="stick-base"></div><div class="stick-knob"></div></div>
   <div class="pad">
@@ -235,9 +246,10 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <div><dt>撃破</dt><dd id="r-ko">0</dd></div>
       <div><dt>最大連撃</dt><dd id="r-combo">0</dd></div>
       <div><dt>時間</dt><dd id="r-time">0:00</dd></div>
+      <div><dt>Lv</dt><dd id="r-lv">1</dd></div>
       <div><dt>評価</dt><dd id="r-rank">—</dd></div>
     </dl>
-    <div class="row"><button class="btn-primary" id="btn-retry">再出陣</button><button class="btn-ghost" id="btn-title">タイトルへ</button></div>
+    <div class="row"><button class="btn-primary" id="btn-next" hidden>次の戦場へ</button><button class="btn-primary" id="btn-retry">再出陣</button><button class="btn-ghost" id="btn-title">タイトルへ</button></div>
   </div>
 </div>
 
