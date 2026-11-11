@@ -1167,8 +1167,12 @@ function startMikiri(dir) {
   h.iframe = d.iframes[1];
   const [mx, my] = input.move();
   const leap = b.state === 'leap' || b.state === 'leapWind';
-  const cx = leap ? b.tx : b.x, cz = leap ? b.tz : b.z;
-  h.mk = { dir, cx: leap ? cx : undefined, cz: leap ? cz : undefined, a0: Math.atan2(h.x - cx, h.z - cz), d0: Math.max(0.5, Math.hypot(h.x - cx, h.z - cz)), mx: -mx, mz: my };
+  // a charging boss overruns and pulls up on the spot the hero just left: the cut is aimed there
+  const charge = b.state === 'charge' || b.state === 'chargeWind';
+  if (charge) { b.stopX = h.x; b.stopZ = h.z; }
+  const fixed = leap || charge;
+  const cx = leap ? b.tx : charge ? h.x : b.x, cz = leap ? b.tz : charge ? h.z : b.z;
+  h.mk = { dir, cx: fixed ? cx : undefined, cz: fixed ? cz : undefined, a0: Math.atan2(h.x - cx, h.z - cz), d0: Math.max(0.5, Math.hypot(h.x - cx, h.z - cz)), mx: -mx, mz: my };
   // pick the way round the boss that matches the stick
   if (dir !== 'B') {
     const r = h.mk.d0, a1 = h.mk.a0 + 0.5, px = Math.sin(a1) * r - Math.sin(h.mk.a0) * r, pz = Math.cos(a1) * r - Math.cos(h.mk.a0) * r;
@@ -1402,6 +1406,7 @@ function updateBoss(dt) {
       break;
     }
     case 'leapLand': if (b.t > 1.1) setBoss('walk', 1 + Math.random()); break;
+    case 'chargeStop': if (b.t > 0.9) setBoss('walk', 0.8); break;
     // full-circle sweep around the boss
     case 'sweepWind':
       turn(2);
@@ -1443,6 +1448,7 @@ function updateBoss(dt) {
     case 'chargeWind': turn(5); if (b.t > 0.7) { setBoss('charge'); sfx.play('roar', 0.5); } break;
     case 'charge':
       b.x += Math.sin(b.face) * 15 * dt; b.z += Math.cos(b.face) * 15 * dt; b.phase += dt * 12;
+      if (b.stopX != null && (b.stopX - b.x) * Math.sin(b.face) + (b.stopZ - b.z) * Math.cos(b.face) <= 0) { setBoss('chargeStop'); break; }
       if (!b.hitDone && dist < 2.3 * sk) { b.hitDone = true; if (bossStrike(140 * b.dmgMul, true, b.x, b.z)) break; }
       for (const e of enemies) if (!e.dead && Math.hypot(e.x - b.x, e.z - b.z) < 2) { e.vx += Math.sin(b.face) * 6; e.vz += Math.cos(b.face) * 6; }
       if (b.t > 0.95 || Math.hypot(b.x, b.z) > ARENA) setBoss('walk', 1.2);
@@ -1469,6 +1475,7 @@ function updateBoss(dt) {
   else if (ps === 'leapWind') { ps = 'chargeWind'; tt = b.t / 0.6; }
   else if (ps === 'leap') { const u = b.t / 0.9; if (u < 0.7) { ps = 'slamWind'; tt = u / 0.5; } else { ps = 'slam'; tt = (u - 0.7) / 0.3; } }
   else if (ps === 'leapLand') { ps = 'slam'; tt = 1; }
+  else if (ps === 'chargeStop') { ps = 'chargeWind'; tt = 1; }
   else if (ps === 'parried') { ps = 'stagger'; tt = b.t / 1.9; }
   else if (ps === 'clash') {
     const at = hero.act?.name === 'CLASH' ? hero.act.t : 0, k = Math.floor(at / CLASH_BEAT), u = at - k * CLASH_BEAT;
@@ -1486,6 +1493,7 @@ function setBoss(s, cd) {
   boss.state = s; boss.t = 0; boss.hitDone = false; if (cd !== undefined) boss.cd = cd;
   if (s.endsWith('Wind')) boss.glinted = false;
   if (s !== 'leap') boss.y = 0;
+  if (s === 'chargeWind' || s === 'walk') boss.stopX = boss.stopZ = null;
 }
 // seconds (game time) until the boss's next strike lands, or null when no strike is coming
 function strikeEta(b, dist) {
