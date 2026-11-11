@@ -2021,6 +2021,11 @@ async function boot() {
     const sel = $('#weapon-select');
     for (const w of [...BUILTIN_WEAPONS, ...EXTRA_WEAPONS]) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.label; sel.appendChild(o); }
     sel.value = 'standard'; $('.weapon-choice').hidden = false;
+    // tap the button to step to the next weapon (works where the native picker does not open)
+    const wbtn = $('#weapon-btn');
+    const showW = () => { wbtn.textContent = `${sel.options[sel.selectedIndex].textContent} ▸`; };
+    wbtn.addEventListener('click', () => { sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length; sel.dispatchEvent(new Event('change')); sfx.unlock(); sfx.play('ui'); });
+    sel.addEventListener('change', showW); showW();
     // show the chosen weapon on the title-screen hero
     sel.addEventListener('change', () => { const pick = hero.weapons[sel.value] || hero.weapons.standard; for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick; }); }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
