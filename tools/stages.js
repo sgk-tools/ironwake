@@ -1,4 +1,4 @@
-// Plays through all three stages with test hooks: levels, stage environments, bosses, next-stage flow.
+// Plays through every stage with test hooks: levels, stage environments, bosses, next-stage flow.
 const { chromium } = require('playwright');
 const OUT = process.argv[2];
 (async () => {
@@ -13,7 +13,8 @@ const OUT = process.argv[2];
   await p.evaluate(() => { window.__game.G.substeps = 3; window.__game.hero().iframe = 1e9; });
   const w = ms => p.waitForTimeout(ms);
   const log = [];
-  for (let st = 0; st < 3; st++) {
+  const NST = await p.evaluate(() => window.__game.STAGES.length);
+  for (let st = 0; st < NST; st++) {
     await w(2500);
     // fight a little on wave 1 so real kills grant EXP
     for (let i = 0; i < 5; i++) { await p.keyboard.down('KeyJ'); await w(900); await p.keyboard.up('KeyJ'); }

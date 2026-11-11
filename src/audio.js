@@ -57,6 +57,8 @@ export class Sfx {
       case 'roar':
         for (let i = 0; i < 3; i++) this._tone(t + i * 0.02, 1.6, 70 + i * 13, 40, 0.35 * vol, 'sawtooth');
         this._noise(t, 1.6, 400, 150, 0.7, 0.5 * vol, 'lowpass'); break;
+      case 'parry': this._tone(t, 0.7, 2400, 2300, 0.22 * vol, 'square'); this._tone(t, 0.9, 3600, 3500, 0.14 * vol); this._noise(t, 0.12, 6000, 2500, 1, 0.5 * vol); this._tone(t, 0.3, 120, 50, 0.4 * vol); break;
+      case 'glint': this._tone(t, 0.18, 3200, 3000, 0.08 * vol, 'triangle'); this._tone(t, 0.25, 4800, 4700, 0.05 * vol); break;
       case 'heal': this._tone(t, 0.35, 520, 880, 0.15 * vol, 'triangle'); break;
       case 'ui': this._tone(t, 0.09, 660, 520, 0.12 * vol, 'triangle'); break;
       case 'wave': this._tone(t, 1.2, 110, 108, 0.4 * vol, 'sawtooth'); this._tone(t, 1.2, 165, 163, 0.25 * vol, 'sawtooth'); break;

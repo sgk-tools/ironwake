@@ -571,6 +571,32 @@ const STAGES = [
       { label: '決戦', sub: '双角の魔将を討て', total: 9999, max: 16, mix: { grunt: 0.4, lancer: 0.4, brute: 0.2 }, rate: 0.9, boss: true },
     ],
   },
+  {
+    name: '第四戦場', place: '凍てつく峠',
+    // larger boss with a three-hit chain and a leaping slam on top of the basic set
+    boss: { name: '鎖斧の巨人', hp: 8200, speed: 1.3, dmg: 1.4, tint: [0.72, 0.86, 0.95], scale: 2.6, enrage: false,
+      attacks: ['cleave', 'slam', 'charge', 'combo', 'leap'] },
+    env: { fog: 0x3a4652, density: 0.019, sky: 0xc8d6e6, gnd: 0x46525e, hemi: 1.9, sun: 0xe4eeff, sunI: 3.3, ground: 0xd2d8e0, envI: 1.9, rim: 0x80b0ff, fill: 1.8 },
+    waves: [
+      { label: '第一波', sub: '黒鉄の騎士が峠を塞ぐ', total: 70, max: 30, mix: { grunt: 0.55, lancer: 0.25, knight: 0.2 }, rate: 0.26 },
+      { label: '第二波', sub: '騎士と重装の亡者が押し寄せる', total: 95, max: 34, mix: { grunt: 0.35, lancer: 0.25, brute: 0.15, knight: 0.25 }, rate: 0.22 },
+      { label: '第三波', sub: '吹雪の中から軍勢が湧き出る', total: 120, max: 40, mix: { grunt: 0.35, lancer: 0.25, brute: 0.15, knight: 0.25 }, rate: 0.18 },
+      { label: '決戦', sub: '鎖斧の巨人を討て', total: 9999, max: 14, mix: { grunt: 0.5, knight: 0.3, lancer: 0.2 }, rate: 1.0, boss: true },
+    ],
+  },
+  {
+    name: '最終戦場', place: '黒鉄の魔城',
+    // final boss: every attack, enrages at half health
+    boss: { name: '黒鉄の魔王', hp: 10800, speed: 1.36, dmg: 1.5, tint: [0.52, 0.46, 0.58], scale: 2.85, enrage: true, glow: [0.07, 0.0, 0.03],
+      attacks: ['cleave', 'slam', 'charge', 'combo', 'leap', 'sweep'] },
+    env: { fog: 0x30223a, density: 0.02, sky: 0xbaa6cc, gnd: 0x3c2e44, hemi: 1.85, sun: 0xffc4a8, sunI: 3.3, ground: 0xb4a8b8, envI: 1.8, rim: 0xff4060, fill: 1.9 },
+    waves: [
+      { label: '第一波', sub: '魔城の門を守る亡者を斬れ', total: 80, max: 32, mix: { grunt: 0.45, lancer: 0.25, brute: 0.1, knight: 0.2 }, rate: 0.24 },
+      { label: '第二波', sub: '近衛の騎士が隊列を組む', total: 105, max: 36, mix: { grunt: 0.3, lancer: 0.25, brute: 0.15, knight: 0.3 }, rate: 0.2 },
+      { label: '第三波', sub: '魔城の全軍が押し寄せる', total: 140, max: 42, mix: { grunt: 0.3, lancer: 0.25, brute: 0.2, knight: 0.25 }, rate: 0.16 },
+      { label: '決戦', sub: '黒鉄の魔王を討て', total: 9999, max: 16, mix: { grunt: 0.4, knight: 0.35, lancer: 0.25 }, rate: 0.9, boss: true },
+    ],
+  },
 ];
 const stage = () => STAGES[G.stageIdx];
 const waveDef = () => stage().waves[G.waveIdx];
@@ -585,6 +611,8 @@ const ENEMY = {
   brute: { hp: 190, speed: 2.3, dmg: 85, range: 2.2, wind: 0.9, scale: 1.38, radius: 0.6, weapon: 'club', armor: true, color: new THREE.Color(0.72, 0.62, 0.58), exp: 5 },
   // fast spear-carrier that lunges forward when it strikes
   lancer: { hp: 32, speed: 4.3, dmg: 55, range: 2.7, wind: 0.5, scale: 0.95, radius: 0.42, weapon: 'spear', armor: false, color: new THREE.Color(0.74, 0.8, 0.92), lunge: 7, exp: 2 },
+  // armoured swordsman (stages 4-5): quick, tough, shrugs off light hits like the brute
+  knight: { hp: 120, speed: 3.6, dmg: 70, range: 1.95, wind: 0.5, scale: 1.12, radius: 0.48, weapon: 'gsword', armor: true, color: new THREE.Color(0.46, 0.48, 0.56), exp: 4 },
 };
 ENEMY.grunt.exp = 1;
 const enemies = [];
@@ -634,7 +662,7 @@ function makeBoss() {
   rig.j.handR.add(axe);
   rig.root.scale.setScalar(2.3);
   scene.add(rig.root);
-  return { rig, axe, mat: bmat, speed: 1, dmgMul: 1, enraged: false, x: 0, z: 30, face: Math.PI, hp: 3200, maxHp: 3200, state: 'roar', t: 0, phase: 0, poise: 0, pose: {}, target: {}, cd: 2, lastHit: -1, dead: false, deadT: 0, hitDone: false, tx: 0, tz: 0 };
+  return { rig, axe, mat: bmat, speed: 1, dmgMul: 1, enraged: false, x: 0, z: 30, face: Math.PI, hp: 3200, maxHp: 3200, state: 'roar', t: 0, phase: 0, poise: 0, pose: {}, target: {}, cd: 2, lastHit: -1, dead: false, deadT: 0, hitDone: false, tx: 0, tz: 0, y: 0, scale: 2.3, attacks: new Set(['cleave', 'slam', 'charge']), strikeIn: null, glinted: false, hitN: 0 };
 }
 
 // ======================================================================= hero logic
@@ -648,7 +676,7 @@ const STANDARD_BLADE = {
 function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
   if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
-  h.act = { name, t: 0, def, hitDone: false, swung: false };
+  h.act = { name, t: 0, def, hitDone: false, swung: false, startT: G.time };
   h.attackId++;
   const aim = h.aimNext !== false; h.aimNext = true;
   if (aim && def.type && name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') {
@@ -780,7 +808,10 @@ function updateHero(dt) {
   const wantHeavy = input.consume('heavy');
   const wantDodge = input.consume('dodge');
   const act = h.act;
-  if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
+  // boss fight: side/back + attack just before a boss strike = evade-cut (checked before everything else)
+  const mk = wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
+  if (mk) startMikiri(mk);
+  else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
     if (wantHeavy) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
     else if (wantAttack) startAction(pickLight(null));
@@ -803,6 +834,7 @@ function updateHero(dt) {
     turnAxis = TURN_AXIS[a.name];
     a.t += dt * (d.type ? speedK : 1);
     sampleKeys(d.keys, a.t, h.target);
+    if (d.mikiri) mikiriMove(a);
     if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
       h.x += Math.sin(h.face) * sp * dt * (d.type ? speedK : 1);
@@ -947,8 +979,17 @@ function heroHits(a) {
       damageEnemy(e, d.dmg * mult, knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
     }
   }
-  if (boss && !boss.dead && boss.state !== 'hidden' && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, 1.2, 0, 4)) {
-    boss.lastHit = h.attackId; any = true; damageBoss(d.dmg * mult * 1.0);
+  if (boss && !boss.dead && boss.state !== 'hidden' && (boss.y || 0) < 1.5 && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, bossRadius() + (d.mikiri ? 0.6 : 0), 0, 4)) {
+    boss.lastHit = h.attackId; any = true;
+    // a staggered or parried boss takes extra damage; the evade-cut hits hardest and staggers
+    const open = boss.state === 'parried' || boss.state === 'stagger';
+    damageBoss(d.dmg * mult * (d.mikiri ? 2.5 : open ? 1.5 : 1.0));
+    if (d.mikiri && !boss.dead) {
+      setBoss('stagger'); boss.poise = 0; G.mikiriHits = (G.mikiriHits || 0) + 1;
+      G.hitstop = Math.max(G.hitstop, 0.12); G.slowmo = Math.min(G.slowmo, 0.3); G.shake = Math.max(G.shake, 0.7);
+      fx.hitFlash(boss.x, 2.2 * bossScale() / 2.3, boss.z, true, true); fx.spark(boss.x, 2, boss.z, 30);
+      callout('見切り', '#ffd27a');
+    }
   }
   if (any) { G.hitstop = Math.max(G.hitstop, (a.name === 'SPIN_LOOP' || a.name === 'RSPIN2' || a.name === 'SPIN1' || a.name === 'L4') ? 0.025 : 0.055); sfx.play('hit'); }
 }
@@ -1025,6 +1066,110 @@ function hurtHero(dmg, fromX, fromZ) {
   // charging the spin has super armour: damage is taken but the wind-up keeps going
   if (h.act && h.act.name === 'CHARGE') { G.shake = Math.max(G.shake, 0.25); return; }
   if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) startAction('HURT');
+}
+
+// ======================================================================= parry + evade-cut (boss fights)
+// Parry: a slash started within PARRY_WIN seconds before a boss strike lands, facing the boss, knocks the
+// strike aside (no damage) and leaves the boss reeling. The boss's weapon glints GLINT_AT seconds before
+// each strike as the cue.
+// Evade-cut: side or back + attack within MIKIRI_WIN seconds before a strike = an invulnerable step around
+// (side) or back-and-in (back) followed by a heavy cut that staggers the boss.
+const PARRY_WIN = 0.4, GLINT_AT = 0.55, MIKIRI_WIN = 0.5;
+const NO_PARRY = new Set(['CHARGE', 'HURT', 'DODGE', 'RAGE', 'DEATH', 'MIKIRI_L', 'MIKIRI_R', 'MIKIRI_B']);
+const bossScale = () => boss?.scale || 2.3;
+const bossRadius = () => 1.2 * bossScale() / 2.3;
+
+function mikiriDef(base, lead) {
+  const b = HERO_ACTIONS[base];
+  return {
+    ...b, mikiri: true, lunge: undefined, multi: false, lead,
+    dur: b.dur + lead, active: [b.active[0] + lead, b.active[1] + lead], chainAt: b.dur + lead,
+    dmg: 64, kb: 7, iframes: [0, lead + 0.35],
+    keys: [[0, HERO_ACTIONS.DODGE.keys[1]?.[1] || b.keys[0][1]], [lead * 0.85, b.keys[0][1], 'out'], ...b.keys.slice(1).map(([t, p, e]) => [t + lead, p, e])],
+  };
+}
+HERO_ACTIONS.MIKIRI_L = mikiriDef('L2', 0.26);
+HERO_ACTIONS.MIKIRI_R = mikiriDef('L1', 0.26);
+HERO_ACTIONS.MIKIRI_B = mikiriDef('XCUT', 0.32);
+
+// side or back relative to the hero->boss line, only while a boss strike is about to land
+function mikiriDir() {
+  const b = boss;
+  if (!b || b.dead || b.state === 'hidden' || b.strikeIn == null || b.strikeIn > MIKIRI_WIN || b.strikeIn < -0.05) return null;
+  const h = hero, dist = Math.hypot(b.x - h.x, b.z - h.z);
+  if (dist > 9) return null;
+  const [mx, my] = input.move();
+  if (Math.hypot(mx, my) < 0.3) return null;
+  const toB = Math.atan2(b.x - h.x, b.z - h.z);
+  const rel = angLerp(toB, Math.atan2(-mx, my), 1) - toB;
+  if (Math.abs(rel) > 2.3) return 'B';
+  if (Math.abs(rel) > 0.8) return rel < 0 ? 'R' : 'L';
+  return null;
+}
+function startMikiri(dir) {
+  const h = hero, b = boss;
+  startAction('MIKIRI_' + dir);
+  const d = h.act.def;
+  h.iframe = d.iframes[1];
+  const [mx, my] = input.move();
+  const leap = b.state === 'leap' || b.state === 'leapWind';
+  const cx = leap ? b.tx : b.x, cz = leap ? b.tz : b.z;
+  h.mk = { dir, cx: leap ? cx : undefined, cz: leap ? cz : undefined, a0: Math.atan2(h.x - cx, h.z - cz), d0: Math.max(0.5, Math.hypot(h.x - cx, h.z - cz)), mx: -mx, mz: my };
+  // pick the way round the boss that matches the stick
+  if (dir !== 'B') {
+    const r = h.mk.d0, a1 = h.mk.a0 + 0.5, px = Math.sin(a1) * r - Math.sin(h.mk.a0) * r, pz = Math.cos(a1) * r - Math.cos(h.mk.a0) * r;
+    h.mk.sign = (px * h.mk.mx + pz * h.mk.mz) >= 0 ? 1 : -1;
+  }
+  G.slowmo = Math.min(G.slowmo, 0.45); G.mikiris = (G.mikiris || 0) + 1;
+  sfx.play('dodge'); fx.ring(h.x, h.z, 1.6, 0xd0e0ff, 0.3);
+}
+// scripted footwork during the lead-in (boss-relative so it tracks a moving boss)
+function mikiriMove(a) {
+  const h = hero, b = boss, m = h.mk, lead = a.def.lead;
+  if (!b || !m || a.t > lead) { if (b && !b.dead) h.face = angLerp(h.face, Math.atan2(b.x - h.x, b.z - h.z), 0.5); return; }
+  const u = Math.min(1, a.t / lead), e = 1 - (1 - u) * (1 - u);
+  // a leaping boss is dodged around its landing point
+  const near = 2.4 * bossScale() / 2.3 + 0.3;
+  let ang = m.a0, r;
+  if (m.dir === 'B') r = u < 0.5 ? m.d0 + (2.2) * (u / 0.5) : (m.d0 + 2.2) + (near - m.d0 - 2.2) * ((u - 0.5) / 0.5) ** 2;
+  else { ang = m.a0 + m.sign * 1.35 * e; r = m.d0 + (near - m.d0) * e; }
+  const cx = m.cx ?? b.x, cz = m.cz ?? b.z;
+  h.x = cx + Math.sin(ang) * r; h.z = cz + Math.cos(ang) * r;
+  h.face = Math.atan2(cx - h.x, cz - h.z);
+  if (Math.random() < 0.6) fx.ember(h.x, 0.1, h.z);
+}
+
+function tryParry() {
+  const h = hero, a = h.act, b = boss;
+  if (!a || !a.def.type || NO_PARRY.has(a.name) || G.time - a.startT > PARRY_WIN) return false;
+  const toB = Math.atan2(b.x - h.x, b.z - h.z);
+  if (Math.abs(angLerp(h.face, toB, 1) - h.face) > 1.3) return false;
+  const cx = (b.x + h.x) / 2, cz = (b.z + h.z) / 2;
+  fx.hitFlash(cx, 1.9, cz, true, false); fx.hitFlash(cx, 1.9, cz, true, false);
+  fx.spark(cx, 1.9, cz, 44); fx.ring(cx, cz, 3.2, 0xfff0c0, 0.4); fx.ring(b.x, b.z, 5, 0xffd080, 0.6);
+  sfx.play('parry');
+  G.hitstop = Math.max(G.hitstop, 0.16); G.slowmo = Math.min(G.slowmo, 0.35); G.shake = Math.max(G.shake, 0.75);
+  h.rage = Math.min(100, h.rage + 12); h.iframe = Math.max(h.iframe, 0.25);
+  b.tele = false; b.poise = 0; b.y = 0; setBoss('parried');
+  G.parries = (G.parries || 0) + 1;
+  callout('弾き', '#fff2c8');
+  return true;
+}
+// every boss strike goes through here: a parry cancels it, otherwise it hurts if it connects
+function bossStrike(dmg, connects, sx, sz) {
+  boss.glinted = false;
+  if (!connects) return false;
+  if (tryParry()) return true;
+  hurtHero(dmg, sx, sz);
+  return false;
+}
+
+let calloutTimer = 0;
+function callout(text, color) {
+  const el = $('#callout'); if (!el) return;
+  el.textContent = text; el.style.color = color || '';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(calloutTimer); calloutTimer = setTimeout(() => el.classList.remove('show'), 900);
 }
 
 // ======================================================================= enemy logic
@@ -1136,6 +1281,13 @@ function updateBoss(dt) {
   b.t += dt;
   const dx = hero.x - b.x, dz = hero.z - b.z, dist = Math.hypot(dx, dz), toHero = Math.atan2(dx, dz);
   const turn = (k) => { b.face = angLerp(b.face, toHero, Math.min(1, dt * k)); };
+  const sk = bossScale() / 2.3;
+  b.strikeIn = strikeEta(b, dist);
+  // the weapon glints just before each strike: the parry cue
+  if (b.strikeIn != null && b.strikeIn <= GLINT_AT && b.strikeIn > 0 && !b.glinted) {
+    b.glinted = true; b.axe.getWorldPosition(tmpV2);
+    fx.hitFlash(tmpV2.x, tmpV2.y + 0.6, tmpV2.z, true, false); fx.ring(b.x, b.z, 2.2 * sk, 0xfff4d0, 0.35); sfx.play('glint');
+  }
   switch (b.state) {
     case 'roar': if (b.t > 2.2) setBoss('walk'); break;
     case 'walk':
@@ -1143,9 +1295,13 @@ function updateBoss(dt) {
       if (dist > 4.2) { b.x += Math.sin(b.face) * 3.4 * dt; b.z += Math.cos(b.face) * 3.4 * dt; }
       b.phase += dt * 5; b.cd -= dt;
       if (b.cd <= 0) {
-        if (dist < 6) setBoss(Math.random() < 0.6 ? 'cleaveWind' : 'slamWind');
-        else if (dist > 10) setBoss('chargeWind');
-        else if (Math.random() < 0.5) setBoss('slamWind');
+        // stages 1-3 keep the original three attacks; later bosses mix in their extra moves
+        const has = (k) => b.attacks.has(k);
+        const extraNear = ['combo', 'sweep'].filter(has), extraMid = ['leap'].filter(has);
+        const any = (l) => l[Math.floor(Math.random() * l.length)];
+        if (dist < 6) setBoss(extraNear.length && Math.random() < 0.45 ? any(extraNear) + 'Wind' : Math.random() < 0.6 ? 'cleaveWind' : 'slamWind');
+        else if (dist > 10) setBoss(extraMid.length && Math.random() < 0.5 ? 'leapWind' : 'chargeWind');
+        else if (Math.random() < 0.5) setBoss(extraMid.length && Math.random() < 0.4 ? 'leapWind' : 'slamWind');
       }
       break;
     case 'cleaveWind': turn(2.5); if (b.t > 0.85) setBoss('cleave'); break;
@@ -1153,9 +1309,62 @@ function updateBoss(dt) {
       if (!b.hitDone && b.t > 0.12) {
         b.hitDone = true; sfx.play('swingHeavy');
         const ang = Math.abs(angLerp(b.face, toHero, 1) - b.face);
-        if (dist < 6.2 && ang < 1.4) hurtHero(160 * b.dmgMul, b.x, b.z);
+        if (bossStrike(160 * b.dmgMul, dist < 6.2 * sk && ang < 1.4, b.x, b.z)) break;
       }
       if (b.t > 1.0) setBoss('walk', 0.8 + Math.random());
+      break;
+    // three quick alternating cleaves, each one can be parried or evaded
+    case 'comboWind': turn(3); if (b.t > 0.5) { setBoss('combo'); b.hitN = 0; } break;
+    case 'combo': {
+      const k = Math.min(2, Math.floor(b.t / 0.5)), u = b.t - k * 0.5;
+      if (u < 0.3) { turn(4); if (dist > 3.4 * sk) { b.x += Math.sin(b.face) * 3 * dt; b.z += Math.cos(b.face) * 3 * dt; } }
+      if (b.hitN === k && u >= 0.32) {
+        b.hitN++; sfx.play('swingHeavy');
+        const ang = Math.abs(angLerp(b.face, toHero, 1) - b.face);
+        if (bossStrike(120 * b.dmgMul, dist < 6.0 * sk && ang < 1.4, b.x, b.z)) break;
+      }
+      if (b.t > 1.85) setBoss('walk', 1.0 + Math.random());
+      break;
+    }
+    // crouch, leap onto the hero's position, crash down with a shockwave
+    case 'leapWind':
+      turn(5);
+      if (!b.tele) { b.tele = true; b.tx = hero.x; b.tz = hero.z; fx.telegraph(b.tx, b.tz, 4.3, (0.6 + 0.9) / b.speed); }
+      if (b.t > 0.6) { setBoss('leap'); b.lx = b.x; b.lz = b.z; sfx.play('roar', 0.4); }
+      break;
+    case 'leap': {
+      const u = Math.min(1, b.t / 0.9);
+      b.x = b.lx + (b.tx - b.lx) * u; b.z = b.lz + (b.tz - b.lz) * u; b.y = 4 * 5.5 * u * (1 - u);
+      b.face = angLerp(b.face, Math.atan2(b.tx - b.lx, b.tz - b.lz), Math.min(1, dt * 6));
+      if (u >= 1 && !b.hitDone) {
+        b.hitDone = true; b.tele = false; b.y = 0; sfx.play('slam'); G.shake = 1;
+        fx.ring(b.tx, b.tz, 5.6, 0xff5020, 0.6); fx.spark(b.tx, 0.3, b.tz, 36);
+        for (const e of enemies) if (!e.dead && Math.hypot(e.x - b.tx, e.z - b.tz) < 4) { e.vx += (e.x - b.tx) * 3; e.vz += (e.z - b.tz) * 3; }
+        if (bossStrike(240 * b.dmgMul, Math.hypot(hero.x - b.tx, hero.z - b.tz) < 4.3, b.tx, b.tz)) break;
+        setBoss('leapLand');
+      }
+      break;
+    }
+    case 'leapLand': if (b.t > 1.1) setBoss('walk', 1 + Math.random()); break;
+    // full-circle sweep around the boss
+    case 'sweepWind':
+      turn(2);
+      if (!b.tele) { b.tele = true; fx.telegraph(b.x, b.z, 5.6, 0.9 / b.speed); }
+      if (b.t > 0.9) { setBoss('sweep'); b.face0 = b.face; }
+      break;
+    case 'sweep':
+      b.face = b.face0 + Math.min(1, b.t / 0.55) * Math.PI * 2;
+      if (!b.hitDone && b.t > 0.28) {
+        b.hitDone = true; b.tele = false; sfx.play('swingHeavy'); sfx.play('slam', 0.4);
+        fx.ring(b.x, b.z, 6, 0xffa040, 0.45);
+        if (bossStrike(190 * b.dmgMul, dist < 5.6, b.x, b.z)) break;
+      }
+      if (b.t > 1.1) { b.face = wrapAng(b.face); setBoss('walk', 1 + Math.random()); }
+      break;
+    case 'parried':
+      // knocked off balance: slides back, open to punishment (extra damage) for a moment
+      if (b.t < 0.3) { b.x -= Math.sin(b.face) * 5 * dt; b.z -= Math.cos(b.face) * 5 * dt; }
+      if (b.t > 1.9) setBoss('walk', 0.5);
       break;
     case 'slamWind':
       if (b.t < 0.05 && !b.tele) { b.tele = true; b.tx = hero.x; b.tz = hero.z; fx.telegraph(b.tx, b.tz, 4, 1.15); }
@@ -1167,14 +1376,14 @@ function updateBoss(dt) {
       if (!b.hitDone && b.t > 0.14) {
         b.hitDone = true; b.tele = false; sfx.play('slam'); G.shake = 0.9;
         fx.ring(b.tx, b.tz, 5.2, 0xff5020, 0.6); fx.spark(b.tx, 0.3, b.tz, 30);
-        if (Math.hypot(hero.x - b.tx, hero.z - b.tz) < 4.1) hurtHero(220 * b.dmgMul, b.tx, b.tz);
+        if (bossStrike(220 * b.dmgMul, Math.hypot(hero.x - b.tx, hero.z - b.tz) < 4.1, b.tx, b.tz)) break;
       }
       if (b.t > 1.2) setBoss('walk', 1 + Math.random());
       break;
     case 'chargeWind': turn(5); if (b.t > 0.7) { setBoss('charge'); sfx.play('roar', 0.5); } break;
     case 'charge':
       b.x += Math.sin(b.face) * 15 * dt; b.z += Math.cos(b.face) * 15 * dt; b.phase += dt * 12;
-      if (!b.hitDone && dist < 2.3) { b.hitDone = true; hurtHero(140 * b.dmgMul, b.x, b.z); }
+      if (!b.hitDone && dist < 2.3 * sk) { b.hitDone = true; if (bossStrike(140 * b.dmgMul, true, b.x, b.z)) break; }
       for (const e of enemies) if (!e.dead && Math.hypot(e.x - b.x, e.z - b.z) < 2) { e.vx += Math.sin(b.face) * 6; e.vz += Math.cos(b.face) * 6; }
       if (b.t > 0.95 || Math.hypot(b.x, b.z) > ARENA) setBoss('walk', 1.2);
       break;
@@ -1189,17 +1398,50 @@ function updateBoss(dt) {
     const r = Math.hypot(b.x, b.z); if (r > ARENA) { b.x *= ARENA / r; b.z *= ARENA / r; }
     // hero cannot walk through the boss
     const d2 = Math.hypot(hero.x - b.x, hero.z - b.z);
-    if (d2 < 1.6 && d2 > 1e-3) { hero.x = b.x + (hero.x - b.x) / d2 * 1.6; hero.z = b.z + (hero.z - b.z) / d2 * 1.6; }
+    const minD = 1.6 * sk;
+    if (b.y < 1.5 && d2 < minD && d2 > 1e-3) { hero.x = b.x + (hero.x - b.x) / d2 * minD; hero.z = b.z + (hero.z - b.z) / d2 * minD; }
   }
-  const tt = { cleaveWind: b.t / 0.85, cleave: b.t / 0.3, slamWind: b.t / 0.9, slam: b.t / 0.18, chargeWind: b.t / 0.6, roar: b.t / 2.2, stagger: b.t / 1.6, dead: b.t / 1.4 }[b.state] ?? b.t;
-  bossPose(b.state, tt, b.phase, b.target);
-  smoothPose(b.pose, b.target, Math.min(1, dt * (b.state === 'cleave' || b.state === 'slam' ? 30 : 12)));
+  // new attacks reuse the base poses: combo = repeated cleave, leap = raised axe then slam, sweep = cleave + spin
+  let ps = b.state, tt;
+  if (ps === 'combo') { const k = Math.min(2, Math.floor(b.t / 0.5)), u = b.t - k * 0.5; if (u < 0.32 && b.t < 1.5) { ps = 'cleaveWind'; tt = u / 0.3; } else { ps = 'cleave'; tt = (u - 0.32) / 0.2; } }
+  else if (ps === 'comboWind' || ps === 'sweepWind') { ps = 'cleaveWind'; tt = b.t / (b.state === 'comboWind' ? 0.5 : 0.9); }
+  else if (ps === 'sweep') { ps = 'cleave'; tt = b.t / 0.3; }
+  else if (ps === 'leapWind') { ps = 'chargeWind'; tt = b.t / 0.6; }
+  else if (ps === 'leap') { const u = b.t / 0.9; if (u < 0.7) { ps = 'slamWind'; tt = u / 0.5; } else { ps = 'slam'; tt = (u - 0.7) / 0.3; } }
+  else if (ps === 'leapLand') { ps = 'slam'; tt = 1; }
+  else if (ps === 'parried') { ps = 'stagger'; tt = b.t / 1.9; }
+  else tt = { cleaveWind: b.t / 0.85, cleave: b.t / 0.3, slamWind: b.t / 0.9, slam: b.t / 0.18, chargeWind: b.t / 0.6, roar: b.t / 2.2, stagger: b.t / 1.6, dead: b.t / 1.4 }[b.state] ?? b.t;
+  bossPose(ps, tt, b.phase, b.target);
+  smoothPose(b.pose, b.target, Math.min(1, dt * (ps === 'cleave' || ps === 'slam' ? 30 : 12)));
   applyPose(b.rig, b.pose);
-  b.rig.root.position.set(b.x, 0, b.z); b.rig.root.rotation.y = b.face;
+  b.rig.root.position.set(b.x, b.y || 0, b.z); b.rig.root.rotation.y = b.face;
   if (b.state === 'roar' && Math.random() < 0.5) fx.ember(b.x, 1.5, b.z);
 }
 
-function setBoss(s, cd) { boss.state = s; boss.t = 0; boss.hitDone = false; if (cd !== undefined) boss.cd = cd; }
+function setBoss(s, cd) {
+  boss.state = s; boss.t = 0; boss.hitDone = false; if (cd !== undefined) boss.cd = cd;
+  if (s.endsWith('Wind')) boss.glinted = false;
+  if (s !== 'leap') boss.y = 0;
+}
+// seconds (game time) until the boss's next strike lands, or null when no strike is coming
+function strikeEta(b, dist) {
+  const v = b.speed, sk = bossScale() / 2.3;
+  switch (b.state) {
+    case 'cleaveWind': return (0.85 - b.t + 0.12) / v;
+    case 'cleave': return b.hitDone ? null : (0.12 - b.t) / v;
+    case 'slamWind': return (1.15 - b.t + 0.14) / v;
+    case 'slam': return b.hitDone ? null : (0.14 - b.t) / v;
+    case 'chargeWind': return (0.7 - b.t) / v + Math.max(0, dist - 2.3 * sk) / (15 * v);
+    case 'charge': return b.hitDone ? null : Math.max(0, dist - 2.3 * sk) / (15 * v);
+    case 'comboWind': return (0.5 - b.t + 0.32) / v;
+    case 'combo': return b.hitN > 2 ? null : (b.hitN * 0.5 + 0.32 - b.t) / v;
+    case 'leapWind': return (0.6 - b.t + 0.9) / v;
+    case 'leap': return b.hitDone ? null : (0.9 - b.t) / v;
+    case 'sweepWind': return (0.9 - b.t + 0.28) / v;
+    case 'sweep': return b.hitDone ? null : (0.28 - b.t) / v;
+    default: return null;
+  }
+}
 
 function damageBoss(dmg) {
   const b = boss;
@@ -1213,7 +1455,7 @@ function damageBoss(dmg) {
     for (const e of enemies) if (!e.dead) { e.hp = 0; damageEnemy(e, 1, 8, 4, true, b.x, b.z); }
     return;
   }
-  if (b.poise > 420 && b.state !== 'stagger') { b.poise = 0; setBoss('stagger'); sfx.play('clang'); }
+  if (b.poise > 420 && b.state !== 'stagger' && b.state !== 'parried' && b.state !== 'leap') { b.poise = 0; setBoss('stagger'); sfx.play('clang'); }
   // enraged phase below half health: faster, plus a ring of reinforcements
   if (b.enrageOn && !b.enraged && b.hp < b.maxHp * 0.5) {
     b.enraged = true; b.speed *= 1.25; b.dmgMul *= 1.15;
@@ -1234,7 +1476,9 @@ function nextWave() {
     boss = boss || makeBoss();
     const bc = stage().boss;
     boss.maxHp = boss.hp = bc.hp; boss.speed = bc.speed; boss.dmgMul = bc.dmg; boss.enrageOn = bc.enrage; boss.enraged = false;
-    boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint).multiplyScalar(2.0); boss.mat.emissive.setRGB(0, 0, 0);
+    boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint).multiplyScalar(2.0); boss.mat.emissive.setRGB(...(bc.glow || [0, 0, 0]));
+    boss.scale = bc.scale || 2.3; boss.rig.root.scale.setScalar(boss.scale); boss.y = 0; boss.tele = false;
+    boss.attacks = new Set(bc.attacks || ['cleave', 'slam', 'charge']);
     $('#boss .name').textContent = bc.name;
     // enter from the top of the screen (camera looks toward +Z), kept inside the arena
     boss.x = hero.x * 0.6; boss.z = hero.z + 14;
@@ -1244,6 +1488,7 @@ function nextWave() {
     setBoss('roar'); boss.cd = 2; boss.rig.root.visible = true;
     setTimeout(() => sfx.play('roar'), 400);
     UI.bossBar.hidden = false;
+    { const k = window.matchMedia?.('(pointer: fine)').matches ? 'J' : '斬'; showTip(`武器が光ったら ${k} で弾く ／ 横か後ろ＋${k} で見切り斬り`); }
   }
 }
 
@@ -1266,6 +1511,12 @@ function updateWaves(dt) {
   UI.objective.textContent = w.boss ? `${stage().boss.name}を討て` : `残り ${G.spawnLeft + alive} 体`;
 }
 
+let tipTimer = 0;
+function showTip(text) {
+  const el = $('#tip'); if (!el) return;
+  el.textContent = text; el.classList.add('show');
+  clearTimeout(tipTimer); tipTimer = setTimeout(() => el.classList.remove('show'), 6000);
+}
 let bannerTimer = 0;
 function showBanner(label, sub) {
   UI.waveLabel.textContent = label; $('#wave-sub').textContent = sub;
@@ -1508,7 +1759,7 @@ async function boot() {
     sel.value = 'standard'; $('.weapon-choice').hidden = EXTRA_WEAPONS.length === 0; }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));

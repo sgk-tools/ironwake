@@ -116,6 +116,11 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 #exp-fill { background: #e9c27a; transform: scaleX(0); }
 #levelup { position: absolute; left: 0; right: 0; top: 18%; display: grid; justify-items: center; gap: 2px; opacity: 0; transform: translateY(6px); transition: opacity 0.3s, transform 0.3s; pointer-events: none; }
 #levelup.show { opacity: 1; transform: none; }
+#callout { position: absolute; left: 0; right: 0; top: 30%; text-align: center; font-family: var(--serif, serif); font-size: clamp(40px, 9vw, 72px); font-weight: 900; letter-spacing: 0.3em; padding-left: 0.3em; color: #fff2c8; text-shadow: 0 0 18px rgba(255, 190, 90, 0.9), 0 2px 0 #000; opacity: 0; transform: scale(1.4); pointer-events: none; }
+#callout.show { animation: callout 0.9s ease-out forwards; }
+@keyframes callout { 0% { opacity: 0; transform: scale(1.6); } 15% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(0.96); } }
+#tip { position: absolute; left: 16px; right: 16px; bottom: 26%; text-align: center; font-size: 13px; letter-spacing: 0.08em; color: #f3e6cf; text-shadow: 0 1px 3px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
+#tip.show { opacity: 1; }
 #levelup .lu-head { font-size: 11px; letter-spacing: 0.5em; color: #e9c27a; padding-left: 0.5em; }
 #lu-lv { font-family: var(--f-display); font-size: clamp(26px, 5vw, 38px); color: #fff; text-shadow: 0 0 16px rgba(233,194,122,0.6); }
 #lu-perk { font-size: 12px; letter-spacing: 0.1em; color: var(--ash); background: var(--glass); padding: 3px 12px; }
@@ -187,7 +192,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <div class="title-inner">
     <div class="eyebrow">一騎当千 ダークファンタジー アクション</div>
     <h1 class="logo"><span class="jp">鉄塊の傭兵</span><span class="en">IRONWAKE</span></h1>
-    <p class="lede">身の丈を超える鉄塊を背負い、亡者の軍勢に一人で挑む。荒野、城塞跡、血の沼地。三つの戦場を斬り抜け、魔将を討て。</p>
+    <p class="lede">身の丈を超える鉄塊を背負い、亡者の軍勢に一人で挑む。荒野、城塞跡、血の沼地、凍てつく峠、黒鉄の魔城。五つの戦場を斬り抜け、魔王を討て。</p>
     <div class="title-actions">
       <label class="weapon-choice" hidden>武器
         <select id="weapon-select">
@@ -198,8 +203,8 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
-    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（移動中は突進突き、連撃中に後ろで斬り上げ・横で袈裟斬り、回避中に押すと反撃） ／ <b>重</b>長押しで溜めて離すと回転斬り（溜めるほど回転数が増える）、連撃の途中で押すと段数に応じた締めの技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃</div>
-    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（移動中は突進突き、後ろで斬り上げ・横で袈裟斬り、回避中は反撃） ／ <b>K</b> 長押しで溜め回転斬り・連撃中は締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止</div>
+    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（移動中は突進突き、連撃中に後ろで斬り上げ・横で袈裟斬り、回避中に押すと反撃） ／ <b>重</b>長押しで溜めて離すと回転斬り（溜めるほど威力と吹き飛びが増える）、連撃の途中で押すと段数に応じた締めの技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 横か後ろへ倒して<b>斬</b>で見切り斬り</div>
+    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（移動中は突進突き、後ろで斬り上げ・横で袈裟斬り、回避中は反撃） ／ <b>K</b> 長押しで溜め回転斬り・連撃中は締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 横か後ろ＋<b>J</b> で見切り斬り</div>
   </div>
 </section>
 
@@ -227,6 +232,8 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
     </div>
   </div>
   <div id="combo" hidden><span id="combo-n">0</span><small>HITS</small></div>
+  <div id="callout"></div>
+  <div id="tip"></div>
   <div id="levelup"><span class="lu-head">LEVEL UP</span><span id="lu-lv">Lv 2</span><span id="lu-perk"></span></div>
   <div id="wave-banner"><div id="wave-label">第一波</div><div id="wave-sub"></div></div>
   <div id="stick-zone"><div class="stick-hint">移動</div><div class="stick-base"></div><div class="stick-knob"></div></div>
