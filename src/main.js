@@ -1196,8 +1196,10 @@ function mikiriMove(a) {
 function tryParry() {
   const h = hero, a = h.act, b = boss;
   if (!a || !a.def.type || NO_PARRY.has(a.name) || G.time - a.startT > PARRY_WIN) return false;
-  const toB = Math.atan2(b.x - h.x, b.z - h.z);
-  if (Math.abs(angLerp(h.face, toB, 1) - h.face) > 1.3) return false;
+  // a landing leap comes down on top of the hero: judge facing against where it jumped from
+  const ox = b.state === 'leap' ? b.lx : b.x, oz = b.state === 'leap' ? b.lz : b.z;
+  const toB = Math.atan2(ox - h.x, oz - h.z);
+  if (Math.hypot(ox - h.x, oz - h.z) > 0.3 && Math.abs(angLerp(h.face, toB, 1) - h.face) > 1.3) return false;
   const cx = (b.x + h.x) / 2, cz = (b.z + h.z) / 2;
   fx.hitFlash(cx, 1.9, cz, true, false); fx.hitFlash(cx, 1.9, cz, true, false);
   fx.spark(cx, 1.9, cz, 44); fx.ring(cx, cz, 3.2, 0xfff0c0, 0.4); fx.ring(b.x, b.z, 5, 0xffd080, 0.6);
