@@ -28,13 +28,14 @@ const { chromium } = require('playwright');
     window.__flow = (dirs, { hold = true, timeout = 120000 } = {}) => new Promise(res => {
       h.x = 0; h.z = 0; h.act = null; h.iframe = 1e9; h.flowSense = null; h.flowRun = 0; g.input.clear(); g.input.held.clear();
       setDir(dirs[0]); g.input.press('attack'); if (!hold) g.input.held.delete('attack');
-      const log = []; let i = 0, lastAct = null, armed = false, t0 = performance.now(), pend = null;
+      const log = []; let i = 0, lastAct = null, armed = false, t0 = performance.now(), pend = null, snap = null;
       const tick = () => {
         const a = h.act;
         if (Math.hypot(h.x, h.z) > 20) { h.x = 0; h.z = 0; }
-        const measure = (L) => { if (L && L.rec === null) L.rec = { step: (h.x - L.x0) * Math.sin(L.ang) + (h.z - L.z0) * Math.cos(L.ang), faceErr: Math.abs(wrap(h.face - L.ang)), t: lastAct ? lastAct.t : 0 }; };
+        // sn = the hero as of the previous frame (before a new cut began turning it)
+        const measure = (L, sn = h) => { if (L && L.rec === null) L.rec = { step: (sn.x - L.x0) * Math.sin(L.ang) + (sn.z - L.z0) * Math.cos(L.ang), faceErr: Math.abs(wrap(sn.face - L.ang)) }; };
         if (a && a !== lastAct) {
-          measure(log[log.length - 1]);   // the cut that just ended (redirected or finished)
+          measure(log[log.length - 1], snap || h);   // the cut that just ended (redirected or finished)
           lastAct = a; armed = false;
           if (pend) { log.push({ ...pend, name: a.name, flowed: !!a.flowed, bucket: a.bucket || null, x0: h.x, z0: h.z, rec: null }); pend = null; }
         }
@@ -49,6 +50,7 @@ const { chromium } = require('playwright');
         }
         const idleDone = i + 1 >= dirs.length && (!a || (a === lastAct && a.t > 0.3 && !pend));
         if (idleDone || performance.now() - t0 > timeout) { g.input.keys.clear(); g.input.held.clear(); g.input.clear(); res({ log, flowCuts: g.G.flowCuts || 0, pendingLeft: !!pend }); return; }
+        snap = { x: h.x, z: h.z, face: h.face };
         requestAnimationFrame(tick);
       };
       tick();

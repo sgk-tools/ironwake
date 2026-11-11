@@ -5,8 +5,9 @@
 import * as THREE from 'three';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-const steel = () => new THREE.MeshStandardMaterial({ color: 0x8d929b, metalness: 0.92, roughness: 0.38, envMapIntensity: 1.3 });
-const darkIron = () => new THREE.MeshStandardMaterial({ color: 0x3a3c42, metalness: 0.85, roughness: 0.55, envMapIntensity: 1.0 });
+// dark, worn steel: the bright sky reflection would otherwise wash a clean metal out to a flat pale pink
+const steel = () => new THREE.MeshStandardMaterial({ color: 0x55585f, metalness: 0.88, roughness: 0.52, envMapIntensity: 0.75 });
+const darkIron = () => new THREE.MeshStandardMaterial({ color: 0x2a2b30, metalness: 0.8, roughness: 0.62, envMapIntensity: 0.6 });
 const leather = () => new THREE.MeshStandardMaterial({ color: 0x3a2618, metalness: 0.05, roughness: 0.85 });
 const wood = () => new THREE.MeshStandardMaterial({ color: 0x2c2019, metalness: 0.1, roughness: 0.8 });
 
@@ -115,7 +116,7 @@ export function applyGrowth(entry, tier) {
     if (!m.userData.baseMat) { m.userData.baseMat = m.material; m.material = m.material.clone(); m.userData.baseColor = m.material.color.clone(); }
     const mat = m.material;
     mat.color.copy(m.userData.baseColor).multiplyScalar(1 - 0.1 * tier);
-    if (mat.emissive) { mat.emissive.setRGB(0.5, 0.03, 0.02); mat.emissiveIntensity = 0.05 * tier; }
+    if (mat.emissive) { mat.emissive.setRGB(0.5, 0.03, 0.02); mat.emissiveIntensity = 0.012 * tier; }   // the scene is exposed brightly: keep this faint
   });
   // rebuild the decorations for this tier
   if (entry.corruption) { root.remove(entry.corruption); entry.corruption.traverse(o => { if (o.isMesh) { if (!o.userData.sharedGeo) o.geometry.dispose(); o.material.dispose(); } }); }
@@ -125,7 +126,7 @@ export function applyGrowth(entry, tier) {
   if (tier >= 2) {
     // barbs: hooked thorns growing out of both edges, more of them (and longer) at higher tiers
     const n = tier === 2 ? 3 : tier === 3 ? 5 : 7;
-    const barbMat = new THREE.MeshStandardMaterial({ color: 0x1c1416, metalness: 0.7, roughness: 0.5, emissive: 0x700808, emissiveIntensity: 0.25 * (tier - 1) });
+    const barbMat = new THREE.MeshStandardMaterial({ color: 0x1c1416, metalness: 0.7, roughness: 0.5, emissive: 0x700808, emissiveIntensity: 0.08 * (tier - 1) });
     for (let i = 0; i < n; i++) {
       const y = deco.y0 + (deco.y1 - deco.y0) * (i + 0.5) / n, len = 0.1 + 0.03 * tier + 0.03 * ((i * 7) % 3);
       for (const sd of [-1, 1]) {
@@ -138,13 +139,16 @@ export function applyGrowth(entry, tier) {
   }
   if (tier >= 3) {
     // pulsing core set into the weapon just above the grip
-    const core = mark(new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 10), new THREE.MeshStandardMaterial({ color: 0x200404, emissive: 0xff2010, emissiveIntensity: 2.2, roughness: 0.3 })));
+    const core = mark(new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 10), new THREE.MeshStandardMaterial({ color: 0x200404, emissive: 0xff2010, emissiveIntensity: 0.6, roughness: 0.3 })));
     core.position.set(0, deco.y0 - 0.12, 0); core.scale.set(1, 1.5, 1.2); c.add(core); entry.core = core;
     // halo: an additive red shell around the blade part
     let blade = null; eachMesh(root, (m) => { if (!blade && (m.name === 'blade' || root.isMesh)) blade = m; });
     if (blade) {
-      const halo = mark(new THREE.Mesh(blade.geometry, new THREE.MeshBasicMaterial({ color: 0xff2408, transparent: true, opacity: 0.1 + 0.06 * (tier - 3), blending: THREE.AdditiveBlending, depthWrite: false })));
-      halo.userData.sharedGeo = true; halo.scale.set(1.12, 1.01, 3.2); c.add(halo); entry.halo = halo;
+      const halo = mark(new THREE.Mesh(blade.geometry, new THREE.MeshBasicMaterial({ color: 0xff2408, transparent: true, opacity: 0.05 + 0.03 * (tier - 3), blending: THREE.AdditiveBlending, depthWrite: false })));
+      // thin blades get a fat shell; a thick head (the maul) only a slight one
+      blade.geometry.computeBoundingBox(); const bb = blade.geometry.boundingBox, thick = bb.max.z - bb.min.z;
+      halo.userData.sharedGeo = true; halo.scale.set(1.12, 1.01, thick > 0.2 ? 1.15 : 3.2);
+      halo.position.y = (bb.min.y + bb.max.y) / 2 * -0.01; c.add(halo); entry.halo = halo;
     }
   }
   root.add(c);
@@ -154,7 +158,7 @@ export function applyGrowth(entry, tier) {
 export function pulseWeapon(entry, time) {
   if (!entry || !entry.tier) return;
   const p = 0.5 + 0.5 * Math.sin(time * 5.2);
-  if (entry.core) entry.core.material.emissiveIntensity = 1.6 + 1.6 * p;
-  if (entry.halo) entry.halo.material.opacity = (0.09 + 0.06 * (entry.tier - 3)) * (0.7 + 0.6 * p);
+  if (entry.core) entry.core.material.emissiveIntensity = 0.35 + 0.5 * p;
+  if (entry.halo) entry.halo.material.opacity = (0.05 + 0.03 * (entry.tier - 3)) * (0.7 + 0.6 * p);
 }
 export const GROW_TEXT = [null, '武器が血を吸い、微かに赤く脈打ち始めた', '武器から棘が生え、ひと回り大きくなった', '赤い核が宿り、刃が瘴気を帯びた', '鉄塊は禍々しい魔の武器と化した'];
