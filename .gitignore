@@ -5,3 +5,4 @@ dist/
 assets/*.glb.bak
 *.log
 dist-stage1/
+__pycache__/
