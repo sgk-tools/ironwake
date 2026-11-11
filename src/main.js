@@ -921,6 +921,8 @@ function updateHero(dt) {
   const wantAttack = input.consume('attack') || (input.held.has('attack') && !h.act);
   if (wantAttack) h.lastAtkT = G.time;
   const wantHeavy = input.consume('heavy');
+  if (wantHeavy) h.heavyUsed = false;
+  if (!input.held.has('heavy') && !wantHeavy) h.heavyUsed = true;   // released: nothing left to carry over
   const wantDodge = input.consume('dodge');
   const act = h.act;
   // boss fight: side/back + attack just before a boss strike = evade-cut (checked before everything else)
@@ -931,10 +933,18 @@ function updateHero(dt) {
   else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge === STAT_MAX || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
-    if (wantHeavy) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
-    else if (wantAttack && h.lightRecovery <= 0) startLight(null);
+    // heavy: a press, or the button still held from a press that could not be used yet (made while
+    // hurt, rolling or mid-attack), starts the charge; one charge per press
+    if (wantHeavy || (input.held.has('heavy') && !h.heavyUsed)) { h.charge = 0; h.chargeLv = 0; h.heavyUsed = true; startAction('CHARGE'); }
+    else if (wantAttack) {
+      if (h.lightRecovery <= 0) startLight(null);
+      else input.pressed.add('attack');   // tapped during the short pause after a full chain: keep it, do not swallow it
+    }
   } else if (act.name === 'DODGE') {
     if (wantAttack) act.queued = 'counter';  // attack during a roll: turning counter-cut on recovery
+  } else if (!act.def.type) {
+    // hurt (or any other state that takes no orders): hold on to the presses until it ends
+    if (wantAttack && act.name !== 'CHARGE') input.pressed.add('attack');
   } else if (act.def.type) {
     if (wantAttack) { act.queued = 'light'; act.queuedDir = readDir(); }
     if (wantHeavy) act.queued = 'heavy';
@@ -1009,7 +1019,7 @@ function updateHero(dt) {
     } else if (a.t >= d.dur && a.queued === 'counter') {
       h.lightCount = 1; h.comboIdx = 0; startAction('L4'); h.act.light = true;
     } else if (a.t >= d.dur) {
-      if (a.light && h.lightCount >= lightLimit()) h.lightRecovery = LIGHT_RECOVERY;
+      if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
       // smoothing does not unwind them backwards
