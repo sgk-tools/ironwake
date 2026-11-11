@@ -1698,6 +1698,7 @@ function startGame(stageIdx = 0, level = 1, exp = 0) {
   G.state = 'play'; input.clear();
   // stage title card, then the first wave
   showBanner(stage().name, stage().place); G.introT = 2.6;
+  UI.objective.textContent = '';   // the previous stage's boss objective would linger through the intro
 }
 
 function endGame(win) {
