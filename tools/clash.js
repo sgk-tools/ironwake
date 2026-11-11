@@ -19,7 +19,8 @@ const { chromium } = require('playwright');
     await p.evaluate(() => { const g = window.__game; g.G.substeps = 4; g.G.introT = 0; g.G.waveIdx = 2; g.enemies.forEach(e => { e.hp = 0; e.dead = true; e.t = 5; }); g.G.spawnLeft = 0; });
     await p.waitForFunction(() => { const bb = window.__game.boss(); return bb && bb.state !== 'hidden' && bb.state !== 'roar'; }, null, { timeout: 60000 });
     await p.evaluate(() => { window.__game.G.spawnLeft = 0; window.__game.G.substeps = 2; });
-    const attacks = await p.evaluate(() => [...window.__game.boss().attacks]);
+    const ONLY = process.argv[2] ? process.argv[2].split(',') : null;   // optional attack filter, e.g. leap,charge
+    const attacks = (await p.evaluate(() => [...window.__game.boss().attacks])).filter(a => !ONLY || ONLY.includes(a));
     for (const atk of attacks) {
       for (const mode of ['none', 'early', 'parry', 'side', 'back']) {
         const r = await p.evaluate(({ atk, mode }) => new Promise(res => {
@@ -42,7 +43,8 @@ const { chromium } = require('playwright');
             if (!pressed && mode !== 'none' && eta != null && eta <= at) {
               pressed = true; if (key) g.input.keys.add(key); g.input.press('attack'); g.input.held.delete('attack');
             }
-            const done = (bb.state === 'parried' && bb.t > 0.1) || bb.state === 'walk' || bb.state === 'parried' || bb.state === 'stagger' || bb.state === 'leapLand';
+            const busy = h.act && (h.act.name.startsWith('MIKIRI') || h.act.name === 'CLASH');
+            const done = !busy && (bb.state === 'walk' || bb.state === 'parried' || bb.state === 'stagger' || bb.state === 'leapLand' || bb.state === 'chargeStop');
             if ((done && performance.now() - t0 > 300) || performance.now() - t0 > 90000) {
               g.input.keys.clear();
               res({ atk, mode, state: bb.state, parried: (g.G.parries || 0) - p0, mikiri: (g.G.mikiriHits || 0) - m0, clash: (g.G.clashHits || 0) - c0, dmg: Math.round(hp0 - h.hp), act: h.act?.name || null, glint });
