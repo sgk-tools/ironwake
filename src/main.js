@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { EXTRA_WEAPONS } from './extra-weapons.js';
+import { BUILTIN_WEAPONS, STANDARD_DECO, applyGrowth, pulseWeapon, GROW_TEXT, GROW_MAX } from './weapons.js';
 import { JOINTS, ORDER, HERO, HERO_ACTIONS, heroRun, sampleKeys, smoothPose, lerpPose, gruntPose, bossPose } from './anim.js';
 
 // ======================================================================= setup
@@ -636,12 +637,13 @@ function makeHero() {
   sw.rotation.set(Math.PI / 2, Math.PI / 2, 0); sw.position.set(0, -0.085, 0.0);
   rig.j.handR.add(sw);
   // optional extra weapons (src/extra-weapons.js): mounted in the same grip, shown when selected
-  const weapons = { standard: { mesh: sw, blade: STANDARD_BLADE } };
-  for (const w of EXTRA_WEAPONS) {
+  const weapons = { standard: { mesh: sw, blade: STANDARD_BLADE, deco: STANDARD_DECO } };
+  // built-in weapon types (src/weapons.js), then any locally registered extras
+  for (const w of [...BUILTIN_WEAPONS, ...EXTRA_WEAPONS]) {
     const mesh = w.make();
     mesh.position.copy(sw.position); mesh.rotation.copy(sw.rotation); mesh.visible = false;
     rig.j.handR.add(mesh);
-    weapons[w.id] = { mesh, blade: w.blade };
+    weapons[w.id] = { mesh, blade: w.blade, deco: w.deco };
   }
   scene.add(rig.root);
   return {
@@ -990,6 +992,9 @@ function updateHero(dt) {
     }
   }
   rageLight.position.set(h.x, 1.4, h.z);
+  // corrupted weapon: flickering core/halo, embers off the blade at the last tier
+  pulseWeapon(h.weapon, G.time);
+  if (h.growTier >= GROW_MAX && Math.random() < 0.25) fx.ember(h.tip.x + (h.base.x - h.tip.x) * Math.random(), Math.max(0.1, h.tip.y - 0.6), h.tip.z + (h.base.z - h.tip.z) * Math.random());
 }
 
 function angLerp(a, b, t) { let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; return a + d * t; }
@@ -1792,6 +1797,8 @@ function startGame(stageIdx = 0, level = 1, exp = 0) {
   for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick;
   hero.sword = pick.mesh;
   hero.blade = pick.blade;
+  // the weapon grows more sinister with every stage already cleared
+  hero.weapon = pick; hero.growTier = applyGrowth(pick, Math.min(GROW_MAX, stageIdx));
   sfx.unlock(); sfx.play('ui'); sfx.startMusic();
   hero.level = level; hero.exp = exp;
   resetGame(true);
@@ -1815,6 +1822,7 @@ function endGame(win) {
   const last = win && !next;
   $('#result-title').textContent = last ? '全戦場制覇' : win ? `${st.name} 突破` : '力尽きた';
   $('#result-sub').textContent = win ? `${st.boss.name}は鉄塊の前に倒れた` : `${st.name}・${waveDef()?.label ?? ''}で倒れた`;
+  if (win && next && GROW_TEXT[G.stageIdx + 1]) $('#result-sub').textContent += `。${GROW_TEXT[G.stageIdx + 1]}`;
   $('#r-lv').textContent = hero.level;
   const nb = $('#btn-next');
   nb.hidden = !win || !next;
@@ -1933,11 +1941,13 @@ async function boot() {
   }
   { // weapon selector: standard sword plus any registered extras; hidden when there are none
     const sel = $('#weapon-select');
-    for (const w of EXTRA_WEAPONS) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.label; sel.appendChild(o); }
-    sel.value = 'standard'; $('.weapon-choice').hidden = EXTRA_WEAPONS.length === 0; }
+    for (const w of [...BUILTIN_WEAPONS, ...EXTRA_WEAPONS]) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.label; sel.appendChild(o); }
+    sel.value = 'standard'; $('.weapon-choice').hidden = false;
+    // show the chosen weapon on the title-screen hero
+    sel.addEventListener('change', () => { const pick = hero.weapons[sel.value] || hero.weapons.standard; for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick; }); }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));
