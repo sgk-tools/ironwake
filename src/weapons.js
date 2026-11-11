@@ -148,7 +148,7 @@ export function applyGrowth(entry, tier) {
       // thin blades get a fat shell; a thick head (the maul) only a slight one
       blade.geometry.computeBoundingBox(); const bb = blade.geometry.boundingBox, thick = bb.max.z - bb.min.z;
       halo.userData.sharedGeo = true; halo.scale.set(1.12, 1.01, thick > 0.2 ? 1.15 : 3.2);
-      halo.position.y = (bb.min.y + bb.max.y) / 2 * -0.01; c.add(halo); entry.halo = halo;
+      c.add(halo); entry.halo = halo;
     }
   }
   root.add(c);
