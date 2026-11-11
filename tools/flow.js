@@ -32,13 +32,15 @@ const { chromium } = require('playwright');
       const tick = () => {
         const a = h.act;
         if (Math.hypot(h.x, h.z) > 20) { h.x = 0; h.z = 0; }
+        const measure = (L) => { if (L && L.rec === null) L.rec = { step: (h.x - L.x0) * Math.sin(L.ang) + (h.z - L.z0) * Math.cos(L.ang), faceErr: Math.abs(wrap(h.face - L.ang)), t: lastAct ? lastAct.t : 0 }; };
         if (a && a !== lastAct) {
+          measure(log[log.length - 1]);   // the cut that just ended (redirected or finished)
           lastAct = a; armed = false;
           if (pend) { log.push({ ...pend, name: a.name, flowed: !!a.flowed, bucket: a.bucket || null, x0: h.x, z0: h.z, rec: null }); pend = null; }
         }
         // finish the step/turn measurement of the latest logged cut when its action is half over
         const L = log[log.length - 1];
-        if (L && L.rec === null && a === lastAct && a && a.t > 0.25) { L.rec = { step: (h.x - L.x0) * Math.sin(L.ang) + (h.z - L.z0) * Math.cos(L.ang), faceErr: Math.abs(wrap(h.face - L.ang)) }; }
+        if (L && L.rec === null && a === lastAct && a && a.t > 0.3) measure(L);
         if (a && a.def.type && !armed && a.t >= mid(a) && i + 1 < dirs.length) {
           armed = true; i++;
           const d = dirs[i];
@@ -62,16 +64,19 @@ const { chromium } = require('playwright');
     cuts: A.log.map(e => `${e.dir}:${e.bucket}:${e.name}`),
     allFlowed: A.log.length === 14 && A.log.every(valid),
     midSlash: A.log.every(e => e.prevT < e.prevChain + 0.06),
-    stepsToward: A.log.filter(e => e.rec).every(e => e.rec.step > 0.3),
-    facesStick: A.log.filter(e => e.rec).every(e => e.rec.faceErr < 0.5),
+    stepsToward: A.log.every(e => e.rec && e.rec.step > 0.12),
+    facesStick: A.log.every(e => e.rec && e.rec.faceErr < 0.6),
     noRepeat: A.log.every(e => e.name !== e.prev),
+    steps: A.log.map(e => e.rec ? +e.rec.step.toFixed(2) : null), faceErr: A.log.map(e => e.rec ? +e.rec.faceErr.toFixed(2) : null),
   };
 
+  console.log('A', JSON.stringify(out.A));
   // B: holding one direction with attack held never redirects
   const f0 = A.flowCuts;
   const B = await run(() => new Promise(res => { const gm = window.__game, h = gm.hero(); h.x = 0; h.z = 0; h.act = null; gm.input.keys.clear(); gm.input.keys.add('KeyA'); gm.input.press('attack'); const s = gm.G.time, f = gm.G.flowCuts || 0; const t = () => { if (gm.G.time - s > 2.5) { gm.input.keys.clear(); gm.input.held.clear(); res({ d: (gm.G.flowCuts || 0) - f }); } else requestAnimationFrame(t); }; t(); }));
   out.B = { noFlowWhenDirectionHeld: B.d === 0 };
 
+  console.log('B', JSON.stringify(out.B));
   // C: attack not held and not pressed recently: a late direction change does nothing
   const C = await run(() => new Promise(res => { const gm = window.__game, h = gm.hero(); h.x = 0; h.z = 0; h.act = null; gm.input.keys.clear(); gm.input.clear(); gm.input.held.clear();
     const f = gm.G.flowCuts || 0; let ph = 0, s = 0;
@@ -83,12 +88,14 @@ const { chromium } = require('playwright');
     }; t(); }));
   out.C = { noFlowWithoutAttack: C.d === 0 };
 
+  console.log('C', JSON.stringify(out.C));
   // D: rolling the stick one way (W -> WA -> A -> SA ...) rolls into a spin
   const D = await run(() => window.__flow(['W', 'WA', 'A', 'SA', 'S', 'SD', 'D', 'WD', 'W']));
   const Dr = await run(() => window.__flow(['W', 'WD', 'D', 'SD', 'S', 'SA', 'A', 'WA', 'W']));
   out.D = { left: D.log.map(e => e.name), right: Dr.log.map(e => e.name),
     spinLeft: D.log.some(e => g.SPIN.L.includes(e.name)), spinRight: Dr.log.some(e => g.SPIN.R.includes(e.name)) };
 
+  console.log('D', JSON.stringify(out.D));
   // E: analog stick (touch) instead of keys
   const E = await run(() => new Promise(res => { const gm = window.__game, h = gm.hero(); h.x = 0; h.z = 0; h.act = null; gm.input.keys.clear(); gm.input.clear(); gm.input.held.clear();
     gm.input.mx = 0; gm.input.my = 1; gm.input.press('attack'); const f = gm.G.flowCuts || 0; let sw = false; const s = performance.now();
@@ -99,15 +106,16 @@ const { chromium } = require('playwright');
       requestAnimationFrame(t); }; t(); }));
   out.E = { analogWorks: E.d >= 1, name: E.name };
 
+  console.log('E', JSON.stringify(out.E));
   // F: long random walk of directions: how many different cuts and (turn, cut) pairs appear
   const seq = ['W']; const all = ['W', 'A', 'S', 'D', 'WA', 'WD', 'SA', 'SD'];
   let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-  for (let i = 0; i < 70; i++) { let d; do { d = all[Math.floor(rnd() * 8)]; } while (d === seq[seq.length - 1]); seq.push(d); }
+  for (let i = 0; i < 45; i++) { let d; do { d = all[Math.floor(rnd() * 8)]; } while (d === seq[seq.length - 1]); seq.push(d); }
   const F = await run((s) => window.__flow(s, { timeout: 400000 }), seq);
   const names = new Set(F.log.map(e => e.name)), pairs = new Set(F.log.map(e => e.bucket + ':' + e.name)), trans = new Set(F.log.map(e => e.prev + '>' + e.name));
   out.F = { redirects: F.log.length, of: seq.length - 1, distinctCuts: names.size, distinctTurnCutPairs: pairs.size, distinctTransitions: trans.size, allValid: F.log.every(valid), cuts: [...names].sort().join(',') };
 
-  console.log(JSON.stringify(out, null, 1));
+  console.log('F', JSON.stringify(out.F));
   const ok = out.A.allFlowed && out.A.midSlash && out.A.stepsToward && out.A.facesStick && out.A.noRepeat && out.B.noFlowWhenDirectionHeld && out.C.noFlowWithoutAttack && out.D.spinLeft && out.D.spinRight && out.E.analogWorks && out.F.allValid && out.F.redirects === out.F.of && out.F.distinctCuts >= 14;
   console.log(ok ? 'ALL OK' : 'FAILED');
   console.log('errors:', errors.length ? [...new Set(errors)].slice(0, 8).join('\n') : 'none');

@@ -901,8 +901,10 @@ function updateHero(dt) {
     if (d.clash) clashStep(a);
     if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
-      h.x += Math.sin(h.face) * sp * dt * (d.type ? speedK : 1);
-      h.z += Math.cos(h.face) * sp * dt * (d.type ? speedK : 1);
+      // a redirected cut lunges where the stick points, not where the body is still turning from
+      const la = a.flowed && h.faceTo != null ? h.faceTo : h.face;
+      h.x += Math.sin(la) * sp * dt * (d.type ? speedK : 1);
+      h.z += Math.cos(la) * sp * dt * (d.type ? speedK : 1);
     }
     if (d.sound && !a.swung && a.t >= d.active[0] - 0.06) { a.swung = true; sfx.play(d.sound); }
     if (d.multi && !a.multiDone && a.t > (d.active[0] + d.active[1]) / 2) { a.multiDone = true; h.attackId++; }
