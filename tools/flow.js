@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await p.goto('http://localhost:8123/dist/test.html');
   await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });
-  await p.evaluate(() => { try { localStorage.clear(); } catch (e) {} window.__game.startGame(0, 6, 0); });
+  await p.evaluate(() => { try { localStorage.clear(); } catch (e) {} window.__game.startGame(0, 6, 0, { technique: 5, health: 2 }); });
   await p.waitForTimeout(800);
   await p.evaluate(() => { const g = window.__game; g.G.introT = 0; g.hero().iframe = 1e9; });
   const run = (fn, arg) => p.evaluate(fn, arg);

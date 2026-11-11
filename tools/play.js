@@ -13,6 +13,16 @@ const MODE = process.argv[3] || 'desktop';
   p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.type() + ': ' + m.text()); });
   await p.goto('http://localhost:8123/dist/test.html');
   await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });
+  await p.evaluate(() => {
+    const dialog = document.querySelector('#stat-select');
+    new MutationObserver(() => {
+      while (!dialog.hidden) {
+        const choice = dialog.querySelector('button:not(:disabled)');
+        if (!choice) break;
+        choice.click();
+      }
+    }).observe(dialog, { attributes: true, attributeFilter: ['hidden'] });
+  });
   await p.waitForTimeout(800);
   await p.screenshot({ path: `${OUT}/${MODE}_title.png` });
   if (MODE === 'iphone') await p.tap('#btn-start'); else await p.click('#btn-start');

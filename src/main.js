@@ -52,7 +52,7 @@ const UI = {
   hud: $('#hud'), hp: $('#hp-fill'), hpLag: $('#hp-lag'), rage: $('#rage-fill'), rageBtn: $('#btn-rage'),
   ko: $('#ko'), combo: $('#combo'), comboN: $('#combo-n'), wave: $('#wave-banner'), waveLabel: $('#wave-label'),
   bossBar: $('#boss'), bossFill: $('#boss-fill'), result: $('#result'), pause: $('#pause'), hurt: $('#hurt'),
-  objective: $('#objective'),
+  objective: $('#objective'), statSelect: $('#stat-select'),
 };
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_u, done, total) => {
@@ -657,7 +657,8 @@ function makeHero() {
     x: 0, z: 0, vx: 0, vz: 0, face: 0, hp: 1000, maxHp: 1000, hpLag: 1000,
     rage: 0, rageT: 0, act: null, queued: null, iframe: 0, phase: 0, speedAmt: 0, pose: {}, target: {},
     lastBase: new THREE.Vector3(), lastTip: new THREE.Vector3(), base: new THREE.Vector3(), tip: new THREE.Vector3(),
-    attackId: 0, dead: false, level: 1, exp: 0, comboIdx: 0, spinLoops: 0,
+    attackId: 0, dead: false, level: 1, exp: 0, stats: loadStats(),
+    comboIdx: 0, lightCount: 0, lightRecovery: 0, spinLoops: 0,
   };
 }
 
@@ -702,22 +703,22 @@ function startAction(name) {
   if (name === 'DODGE') {
     const [mx, my] = input.move();
     if (Math.hypot(mx, my) > 0.2) h.face = Math.atan2(-mx, my);
-    h.iframe = def.iframes[1]; sfx.play('dodge');
+    sfx.play('dodge');
   }
 }
 
 // light attack choice: running start -> thrust; during a combo the stick direction relative to
 // the hero picks a variation (back = rising launcher, side = diagonal cut); rage has its own chain
-// The combo grows with level: Lv2 adds a turning backhand, Lv4 a double thrust, Lv6 a leaping slam.
-// The combo grows with level (Lv2 turning backhand, Lv4 double thrust, Lv6 leaping slam). Each step is a
-// pool of moves; one is picked at random so strings of attacks vary, never repeating the previous move.
+// Each combo step has a pool of moves. Technique unlocks additional steps in the normal chain.
 function comboChain() {
-  const lv = hero.level;
+  const technique = hero.stats.technique;
   if (hero.rageT > 0) {
-    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(lv >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(lv >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(hero.level >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(hero.level >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
   return [['L1', 'L1B', 'VCUT', 'LOWSWEEP', 'CROSS'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT', 'L2B'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG'],
-    ...(lv >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B', 'CROSS2']] : []), ...(lv >= 4 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG', 'L2B']] : []), ...(lv >= 6 ? [['L6', 'VAULT']] : [])];
+    ...(technique >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B', 'CROSS2']] : []),
+    ...(technique >= 3 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG', 'L2B']] : []),
+    ...(technique >= 4 ? [['L6', 'VAULT']] : [])];
 }
 function pickFrom(pool, prev) {
   const opts = pool.filter(n => n !== prev);
@@ -747,38 +748,86 @@ function pickLight(prev, dir = readDir()) {
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
   return pickFrom(chain[hero.comboIdx], prev);
 }
+function startLight(prev, dir) {
+  startAction(pickLight(prev, dir));
+  hero.act.light = true;
+}
+
 // heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
 const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
-const LEVEL_MAX = 10;
+const LEVEL_MAX = 17;
+const STAT_MAX = 5;
+const STAT_KEYS = ['health', 'power', 'technique', 'dodge'];
+const STAT_BUTTONS = [...UI.statSelect.querySelectorAll('[data-stat]')];
+const HEALTH_PER_RANK = 90;
+const POWER_PER_RANK = 0.15;
+const LIGHT_RECOVERY = 0.22;
+const DODGE_START = [0.12, 0.09, 0.06, 0.03, 0];
+
 const expNeed = (lv) => 14 + lv * 10;
-const dmgMul = () => 1 + 0.07 * (hero.level - 1);
-const LEVEL_PERKS = {
-  2: '連撃が4段に（回転返し斬り）',
-  3: '覚醒連撃に回転返し斬りが加わる',
-  4: '連撃が5段に（二段突き）',
-  5: '覚醒連撃に縦回転斬りがもう一度加わる',
-  6: '連撃が6段に（大跳躍叩きつけ）',
-};
+const dmgMul = () => 1 + POWER_PER_RANK * (hero.stats.power - 1);
+const maxHealth = () => 1000 + HEALTH_PER_RANK * (hero.stats.health - 1);
+const lightLimit = () => hero.stats.technique === STAT_MAX ? Infinity : hero.stats.technique + 2;
+
+function loadStats(saved) {
+  return Object.fromEntries(STAT_KEYS.map(key => {
+    const rank = saved?.[key];
+    return [key, Number.isInteger(rank) ? Math.min(STAT_MAX, Math.max(1, rank)) : 1];
+  }));
+}
+
+function statPoints() {
+  const spent = STAT_KEYS.reduce((total, key) => total + hero.stats[key] - 1, 0);
+  return Math.max(0, hero.level - 1 - spent);
+}
+
 function gainExp(n) {
   const h = hero;
   if (h.level >= LEVEL_MAX) return;
   h.exp += n;
   while (h.level < LEVEL_MAX && h.exp >= expNeed(h.level)) {
     h.exp -= expNeed(h.level); h.level++;
-    h.maxHp += 90; h.hp = Math.min(h.maxHp, h.hp + 90 + h.maxHp * 0.25);
-    const perk = LEVEL_PERKS[h.level] || '攻撃力と体力が上がった・回転斬りの回転数が増えた';
-    showLevelUp(h.level, perk);
+    h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.25);
     sfx.play('heal'); fx.ring(h.x, h.z, 3, 0xffd080, 0.6);
   }
   if (h.level >= LEVEL_MAX) h.exp = 0;
 }
-let lvTimer = 0;
-function showLevelUp(lv, perk) {
-  const el = $('#levelup');
-  $('#lu-lv').textContent = `Lv ${lv}`; $('#lu-perk').textContent = perk;
-  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
-  clearTimeout(lvTimer); lvTimer = setTimeout(() => el.classList.remove('show'), 2600);
+
+function showStatSelection() {
+  G.state = 'stat-select';
+  UI.statSelect.hidden = false;
+  UI.hud.inert = true;
+  $('#stat-points').textContent = `Lv ${hero.level} ・ 残り ${statPoints()} 回`;
+  for (const button of STAT_BUTTONS) {
+    const rank = hero.stats[button.dataset.stat];
+    button.disabled = rank >= STAT_MAX;
+    button.querySelector('.stat-rank').textContent = button.disabled ? `Lv ${rank}（最大）` : `Lv ${rank} → ${rank + 1}`;
+  }
+  if (!UI.statSelect.contains(document.activeElement) || document.activeElement.disabled) {
+    STAT_BUTTONS.find(button => !button.disabled)?.focus();
+  }
+  input.clear(); input.held.clear(); input.keys.clear(); input.resetStick();
 }
+
+function chooseStat(key) {
+  if (G.state !== 'stat-select' || !statPoints() || hero.stats[key] >= STAT_MAX) return;
+  hero.stats[key]++;
+  if (key === 'health') {
+    hero.maxHp = maxHealth();
+    hero.hp = Math.min(hero.maxHp, hero.hp + HEALTH_PER_RANK);
+  }
+  sfx.play('ui');
+  updateHUD(0);
+  if (statPoints() > 0) {
+    showStatSelection();
+  } else {
+    UI.statSelect.hidden = true;
+    UI.hud.inert = false;
+    input.clear();
+    G.state = 'play';
+  }
+}
+
 function wrapAng(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
 
 function rageMult() { return hero.rageT > 0 ? 1.35 : 1; }
@@ -816,6 +865,9 @@ function flowBucket(turn) {
 function tryFlow() {
   const h = hero, a = h.act;
   if (!a || !a.def.type || NO_FLOW.has(a.name) || a.def.clashLocked) return false;
+  // A redirect continues the same chain, including when it starts from a finisher.
+  const count = a.light ? h.lightCount : 1;
+  if (count >= lightLimit()) return false;
   if (!(input.held.has('attack') || G.time - (h.lastAtkT ?? -9) < 0.45)) return false;
   // part-way through the cut: its first half has to play (and hit) before it can be turned
   const mid = a.def.active[0] + (a.def.active[1] - a.def.active[0]) * 0.5;
@@ -834,11 +886,11 @@ function tryFlow() {
   else name = pickFrom(FLOW[bucket], a.name);
   h.aimNext = false;
   startAction(name);
-  h.act.flowed = true; h.act.bucket = bucket;
+  h.act.light = true; h.act.flowed = true; h.act.bucket = bucket;
   // the blade is already moving: skip most of the wind-up
   if (!TURN_AXIS[name]) h.act.t = Math.min(0.07, h.act.def.active[0] * 0.6);
   h.faceTo = ang; h.flowAng = ang;
-  h.lightCount = (h.lightCount || 0) + 1;
+  h.lightCount = count + 1;
   G.flowCuts = (G.flowCuts || 0) + 1;
   return true;
 }
@@ -852,6 +904,7 @@ function updateHero(dt) {
     return;
   }
   h.iframe = Math.max(0, h.iframe - dt);
+  h.lightRecovery = Math.max(0, h.lightRecovery - dt);
   if (h.rageT > 0) {
     h.rageT -= dt;
     h.mat.emissive.setRGB(0.1 + 0.05 * Math.sin(G.time * 12), 0.008, 0.0);
@@ -875,10 +928,11 @@ function updateHero(dt) {
   if (mk) startMikiri(mk);
   else if (locked) { /* ignore input */ }
   else if (!wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
-  else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
+  else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
+    && (h.stats.dodge === STAT_MAX || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
     if (wantHeavy) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
-    else if (wantAttack) startAction(pickLight(null));
+    else if (wantAttack && h.lightRecovery <= 0) startLight(null);
   } else if (act.name === 'DODGE') {
     if (wantAttack) act.queued = 'counter';  // attack during a roll: turning counter-cut on recovery
   } else if (act.def.type) {
@@ -941,16 +995,21 @@ function updateHero(dt) {
       h.pose.rootYaw = h.target.rootYaw = 0;
       h.spinLoops++;
       startAction(h.spinLoops < (h.spinTarget || 1) ? 'SPIN_LOOP' : 'SPIN_OUT');
-    } else if (d.type && a.t >= d.chainAt && a.queued) {
+    } else if (d.type && a.t >= d.chainAt && a.queued
+      && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
       if (a.queued === 'heavy') {
         // heavy mid-combo: a finisher that depends on how many light hits came before
         const n = h.lightCount || 0;
         if (n <= 0) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
         else { startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
-      } else startAction(pickLight(a.name, a.queuedDir));
+      } else {
+        if (!a.light) h.lightCount = 0;
+        startLight(a.name, a.queuedDir);
+      }
     } else if (a.t >= d.dur && a.queued === 'counter') {
-      h.lightCount = 1; startAction('L4');
+      h.lightCount = 1; h.comboIdx = 0; startAction('L4'); h.act.light = true;
     } else if (a.t >= d.dur) {
+      if (a.light && h.lightCount >= lightLimit()) h.lightRecovery = LIGHT_RECOVERY;
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
       // smoothing does not unwind them backwards
@@ -1045,7 +1104,7 @@ function heroHits(a) {
     return;
   }
   const turn = Boolean(TURN_AXIS[a.name]);
-  const knockback = d.kb * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB * (1 + 0.05 * (h.chargeLv || 0)) : 1);
+  const knockback = d.kb * dmgMul() * (turn ? 1.6 : 1) * (HEAVY_SPIN.has(a.name) ? HEAVY_SPIN_KB * (1 + 0.05 * (h.chargeLv || 0)) : 1);
   const bonusLift = turn ? 1.5 : 0;
   let any = false;
   const bodyHit = (x, z, r) => {
@@ -1089,7 +1148,7 @@ function impact(a) {
     const dist = Math.hypot(e.x - cx, e.z - cz);
     if (dist < d.radius + ENEMY[e.type].radius && e.lastHit !== h.attackId + 0.5) {
       e.lastHit = h.attackId + 0.5;
-      damageEnemy(e, d.dmg * mult * (1 - dist / (d.radius * 2)), d.kb, d.up, true, cx, cz);
+      damageEnemy(e, d.dmg * mult * (1 - dist / (d.radius * 2)), d.kb * dmgMul(), d.up, true, cx, cz);
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && Math.hypot(boss.x - cx, boss.z - cz) < d.radius + 1.2) damageBoss(d.dmg * mult * 0.8);
@@ -1133,6 +1192,8 @@ const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', '
 function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;
+  const a = h.act;
+  if (a?.name === 'DODGE' && a.t >= DODGE_START[h.stats.dodge - 1] && a.t <= a.def.iframes[1]) return;
   // spinning attacks are invulnerable (charged spin and the spins inside combos)
   if (h.act && SPIN_MOVES.has(h.act.name)) return;
   h.hp -= dmg * (h.rageT > 0 ? 0.6 : 1);
@@ -1789,8 +1850,10 @@ function refreshContinue() {
 function resetGame(keepLevel = false) {
   for (const e of enemies) e.dead = true;
   enemies.length = 0; fx.clear(); crowd.begin(); crowd.end();
-  if (!keepLevel) { hero.level = 1; hero.exp = 0; }
-  hero.maxHp = 1000 + 90 * (hero.level - 1); hero.comboIdx = 0;
+  if (!keepLevel) { hero.level = 1; hero.exp = 0; hero.stats = loadStats(); }
+  hero.maxHp = maxHealth(); hero.comboIdx = 0; hero.lightCount = 0; hero.lightRecovery = 0;
+  hero.lastAtkT = null; hero.flowSense = null; hero.flowRun = 0;
+  UI.statSelect.hidden = true; UI.hud.inert = false;
   hero.x = 0; hero.z = 0; hero.face = 0; hero.hp = hero.maxHp; hero.hpLag = hero.maxHp; hero.rage = 0; hero.rageT = 0;
   hero.act = null; hero.dead = false; hero.iframe = 0; hero.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0;
   if (boss) { boss.rig.root.visible = false; boss.state = 'hidden'; boss.hp = boss.maxHp; boss.dead = false; boss.poise = 0; }
@@ -1800,7 +1863,7 @@ function resetGame(keepLevel = false) {
   for (const k in hudCache) delete hudCache[k];
 }
 
-function startGame(stageIdx = 0, level = 1, exp = 0) {
+function startGame(stageIdx = 0, level = 1, exp = 0, stats) {
   const pick = hero.weapons[$('#weapon-select').value] || hero.weapons.standard;
   for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick;
   hero.sword = pick.mesh;
@@ -1808,7 +1871,9 @@ function startGame(stageIdx = 0, level = 1, exp = 0) {
   // the weapon grows more sinister with every stage already cleared
   hero.weapon = pick; hero.growTier = applyGrowth(pick, Math.min(GROW_MAX, stageIdx));
   sfx.unlock(); sfx.play('ui'); sfx.startMusic();
-  hero.level = level; hero.exp = exp;
+  hero.level = Number.isInteger(level) ? Math.min(LEVEL_MAX, Math.max(1, level)) : 1;
+  hero.exp = exp;
+  hero.stats = loadStats(stats);
   resetGame(true);
   G.stageIdx = stageIdx; applyEnv(stage().env);
   UI.title.hidden = true; UI.result.hidden = true; UI.pause.hidden = true; UI.hud.hidden = false;
@@ -1816,6 +1881,7 @@ function startGame(stageIdx = 0, level = 1, exp = 0) {
   // stage title card, then the first wave
   showBanner(stage().name, stage().place); G.introT = 2.6;
   UI.objective.textContent = '';   // the previous stage's boss objective would linger through the intro
+  if (statPoints() > 0) showStatSelection();
 }
 
 function endGame(win) {
@@ -1834,8 +1900,8 @@ function endGame(win) {
   $('#r-lv').textContent = hero.level;
   const nb = $('#btn-next');
   nb.hidden = !win || !next;
-  if (win && next) { nb.textContent = `次の戦場へ（${next.name}）`; writeSave({ stage: G.stageIdx + 1, level: hero.level, exp: hero.exp }); }
-  if (last) writeSave({ stage: G.stageIdx, level: hero.level, exp: hero.exp, cleared: true });
+  if (win && next) { nb.textContent = `次の戦場へ（${next.name}）`; writeSave({ stage: G.stageIdx + 1, level: hero.level, exp: hero.exp, stats: hero.stats }); }
+  if (last) writeSave({ stage: G.stageIdx, level: hero.level, exp: hero.exp, stats: hero.stats, cleared: true });
   $('#r-ko').textContent = G.ko; $('#r-combo').textContent = G.maxCombo;
   $('#r-time').textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
   $('#r-rank').textContent = rank;
@@ -1875,6 +1941,10 @@ function frame(now) {
         updateHero(dt); updateEnemies(dt); updateBoss(dt);
         if (G.state === 'play') updateWaves(dt);
         fx.update(dt);
+        if (G.state === 'play' && !hero.dead && statPoints() > 0) {
+          showStatSelection();
+          break;
+        }
       }
       updateHUD(dt);
     }
@@ -1959,15 +2029,26 @@ async function boot() {
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));
-$('#btn-continue').addEventListener('click', () => { const sv = loadSave(); if (sv) startGame(sv.stage, sv.level, sv.exp || 0); });
+$('#btn-continue').addEventListener('click', () => { const sv = loadSave(); if (sv) startGame(sv.stage, sv.level, sv.exp || 0, sv.stats); });
 // retry keeps the level reached on this battlefield
-$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp));
-$('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp));
+$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp, hero.stats));
+$('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp, hero.stats));
 $('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; refreshContinue(); });
 $('#btn-pause').addEventListener('click', () => setPaused(true));
 $('#btn-resume').addEventListener('click', () => setPaused(false));
 $('#btn-quit').addEventListener('click', () => { setPaused(false); G.state = 'title'; sfx.stopMusic(); resetGame(); UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false; refreshContinue(); });
 $('#btn-sound').addEventListener('click', (e) => { sfx.unlock(); sfx.setMuted(!sfx.muted); e.currentTarget.classList.toggle('off', sfx.muted); e.currentTarget.setAttribute('aria-pressed', String(sfx.muted)); });
+for (const button of STAT_BUTTONS) button.addEventListener('click', () => chooseStat(button.dataset.stat));
+UI.statSelect.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key !== 'Tab') return;
+  const available = STAT_BUTTONS.filter(button => !button.disabled);
+  const first = available[0], last = available[available.length - 1];
+  if (e.shiftKey ? document.activeElement === first : document.activeElement === last) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+  }
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play') setPaused(true); });
 
 requestAnimationFrame(frame);

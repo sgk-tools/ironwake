@@ -6,7 +6,7 @@ const OUT = process.argv[2], ST = +(process.argv[3] || 0);
   const p = await b.newPage({ viewport: { width: 960, height: 540 } });
   await p.goto('http://localhost:8124/dist/test.html');
   await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });
-  await p.evaluate((s) => { window.__game.startGame(s, 6, 0); }, ST);
+  await p.evaluate((s) => { window.__game.startGame(s, 6, 0, { technique: 5, health: 2 }); }, ST);
   await p.waitForTimeout(500);
   await p.evaluate(() => { const g = window.__game; g.G.substeps = 4; g.G.introT = 0; g.G.waveIdx = 2; g.enemies.forEach(e => { e.hp = 0; e.dead = true; e.t = 5; }); g.G.spawnLeft = 0; });
   await p.waitForFunction(() => { const bb = window.__game.boss(); return bb && bb.state !== 'hidden' && bb.state !== 'roar'; }, null, { timeout: 60000 });

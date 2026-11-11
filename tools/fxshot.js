@@ -7,7 +7,7 @@ const OUT = process.argv[2];
   const errors = []; p.on('pageerror', e => errors.push(e.message));
   await p.goto('http://localhost:8123/dist/test.html');
   await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });
-  await p.evaluate(() => { const g = window.__game; g.startGame(0, 3, 0); g.hero().iframe = 1e9; });
+  await p.evaluate(() => { const g = window.__game; g.startGame(0, 3, 0, { health: 3 }); g.hero().iframe = 1e9; });
   await p.waitForTimeout(3500);
   await p.evaluate(() => { const g = window.__game, h = g.hero(); g.G.waveIdx = 0; g.G.spawnLeft = 999;
     for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2, r = 1.8 + (i % 2) * 0.9;
