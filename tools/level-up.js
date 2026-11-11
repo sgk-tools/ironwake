@@ -123,6 +123,46 @@ async function run() {
     }
     console.log('Held attack chains at all five technique ranks passed');
 
+    for (let rank = 1; rank <= 5; rank++) {
+      const chain = await page.evaluate(technique => new Promise(resolve => {
+        const g = window.__game;
+        g.startGame(0, technique, 0, { technique });
+        Object.assign(g.G, { introT: 99, substeps: 1 });
+        const h = g.hero();
+        const initialFlows = g.G.flowCuts || 0;
+        let key = 'KeyW';
+        let lastTurn;
+        g.input.keys.add(key);
+        g.input.press('attack');
+        const end = performance.now() + 8000;
+        const tick = () => {
+          if (h.lightRecovery > 0 || h.lightCount >= 9 || performance.now() >= end) {
+            g.input.keys.clear();
+            g.input.held.delete('attack');
+            resolve({ hits: h.lightCount, redirects: (g.G.flowCuts || 0) - initialFlows, recovery: h.lightRecovery });
+            return;
+          }
+          const action = h.act;
+          if (action?.light && action !== lastTurn) {
+            const [start, finish] = action.def.active;
+            if (action.t >= (start + finish) / 2) {
+              lastTurn = action;
+              g.input.keys.delete(key);
+              key = key === 'KeyW' ? 'KeyD' : 'KeyW';
+              g.input.keys.add(key);
+            }
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }), rank);
+      const hits = rank === 5 ? 9 : rank + 2;
+      assert.equal(chain.hits, hits);
+      assert.equal(chain.redirects, hits - 1);
+      assert.equal(chain.recovery > 0, rank < 5);
+    }
+    console.log('Flow redirects count toward all five technique ranks and stop at the cap');
+
     const dodge = await page.evaluate(() => {
       const g = window.__game;
       return [1, 2, 3, 4, 5].map(dodgeRank => {
