@@ -8,6 +8,16 @@ const OUT = process.argv[2];
   p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await p.goto('http://localhost:8123/dist/test.html');
   await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });
+  await p.evaluate(() => {
+    const dialog = document.querySelector('#stat-select');
+    new MutationObserver(() => {
+      while (!dialog.hidden) {
+        const choice = dialog.querySelector('button:not(:disabled)');
+        if (!choice) break;
+        choice.click();
+      }
+    }).observe(dialog, { attributes: true, attributeFilter: ['hidden'] });
+  });
   await p.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await p.click('#btn-start');
   await p.evaluate(() => { window.__game.G.substeps = 3; window.__game.hero().iframe = 1e9; });
@@ -34,7 +44,7 @@ const OUT = process.argv[2];
     log.push({ s1, s2, s3 });
     if (s3.next) { await p.click('#btn-next'); await p.evaluate(() => { window.__game.hero().iframe = 1e9; }); }
   }
-  // level perks: force levels and check combo chain lengths
+  // Force levels and check experience progression.
   const lv = await p.evaluate(() => { const g = window.__game; const h = g.hero(); const r = []; h.level = 1; h.exp = 0; for (let i = 0; i < 9; i++) { g.gainExp(200); r.push(h.level); } return r; });
   console.log(JSON.stringify(log, null, 1));
   console.log('levels after exp:', lv.join(','));

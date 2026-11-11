@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
   await p.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   const results = [];
   for (const stageIdx of [0, 3, 4]) {
-    await p.evaluate((s) => { window.__game.startGame(s, 6, 0); }, stageIdx);
+    await p.evaluate((s) => { window.__game.startGame(s, 1, 0); }, stageIdx);
     await p.waitForTimeout(500);
     // jump to the boss wave and stop the crowd so only the boss matters
     await p.evaluate(() => { const g = window.__game; g.G.substeps = 4; g.G.introT = 0; g.G.waveIdx = 2; g.enemies.forEach(e => { e.hp = 0; e.dead = true; e.t = 5; }); g.G.spawnLeft = 0; });
@@ -39,9 +39,10 @@ const { chromium } = require('playwright');
           const p0 = g.G.parries || 0, m0 = g.G.mikiriHits || 0, c0 = g.G.clashHits || 0, hp0 = h.hp;
           g.setBoss(atk + 'Wind'); bb.tele = false; bb.glinted = false;
           const expectedHeroDamage = 160 * bb.dmgMul;
-          const expectedBossDamage = g.HERO_ACTIONS.L1.dmg * (1 + 0.07 * (h.level - 1));
+          const expectedBossDamage = g.HERO_ACTIONS.L1.dmg;
           const random = Math.random;
           let rolled = false, sawRecoil = false;
+          let bossHpAtClash;
           if (roll !== undefined) {
             Math.random = () => {
               const a = h.act;
@@ -55,6 +56,8 @@ const { chromium } = require('playwright');
           const key = mode === 'side' ? 'KeyD' : mode === 'back' ? 'KeyW' : null;   // hero faces -z: W = away from the boss
           const tick = () => {
             if (bb.glinted) glint = true;
+            // The initiating slash can hit before it parries. Count damage from the exchange only.
+            if (h.act?.name === 'CLASH') bossHpAtClash ??= bb.hp;
             const eta = bb.strikeIn;
             const at = mode === 'early' ? 1.1 : roll !== undefined ? 0.22 : 0.3;
             if (!pressed && mode !== 'none' && eta != null && eta <= at) {
@@ -69,7 +72,7 @@ const { chromium } = require('playwright');
               res({
                 atk, mode, state: bb.state, parried: (g.G.parries || 0) - p0,
                 mikiri: (g.G.mikiriHits || 0) - m0, clash: (g.G.clashHits || 0) - c0,
-                dmg: Math.round(hp0 - h.hp), bossDmg: Math.round(bb.maxHp - bb.hp),
+                dmg: Math.round(hp0 - h.hp), bossDmg: Math.round((bossHpAtClash ?? bb.maxHp) - bb.hp),
                 expectedHeroDamage: Math.round(expectedHeroDamage), expectedBossDamage: Math.round(expectedBossDamage),
                 act: h.act?.name || null, glint, rolled, sawRecoil,
               });

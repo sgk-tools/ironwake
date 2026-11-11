@@ -114,16 +114,11 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 .lv { font-family: var(--f-display); font-size: 13px; color: var(--ember); letter-spacing: 0.08em; }
 .bar.exp { height: 3px; width: 60%; clip-path: none; }
 #exp-fill { background: #e9c27a; transform: scaleX(0); }
-#levelup { position: absolute; left: 0; right: 0; top: 18%; display: grid; justify-items: center; gap: 2px; opacity: 0; transform: translateY(6px); transition: opacity 0.3s, transform 0.3s; pointer-events: none; }
-#levelup.show { opacity: 1; transform: none; }
 #callout { position: absolute; left: 0; right: 0; top: 30%; text-align: center; font-family: var(--serif, serif); font-size: clamp(40px, 9vw, 72px); font-weight: 900; letter-spacing: 0.3em; padding-left: 0.3em; color: #fff2c8; text-shadow: 0 0 18px rgba(255, 190, 90, 0.9), 0 2px 0 #000; opacity: 0; transform: scale(1.4); pointer-events: none; }
 #callout.show { animation: callout 0.9s ease-out forwards; }
 @keyframes callout { 0% { opacity: 0; transform: scale(1.6); } 15% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(0.96); } }
 #tip { position: absolute; left: 16px; right: 16px; bottom: 26%; text-align: center; font-size: 13px; letter-spacing: 0.08em; color: #f3e6cf; text-shadow: 0 1px 3px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
 #tip.show { opacity: 1; }
-#levelup .lu-head { font-size: 11px; letter-spacing: 0.5em; color: #e9c27a; padding-left: 0.5em; }
-#lu-lv { font-family: var(--f-display); font-size: clamp(26px, 5vw, 38px); color: #fff; text-shadow: 0 0 16px rgba(233,194,122,0.6); }
-#lu-perk { font-size: 12px; letter-spacing: 0.1em; color: var(--ash); background: var(--glass); padding: 3px 12px; }
 #wave-banner { position: absolute; left: 0; right: 0; top: 34%; display: grid; justify-items: center; gap: 6px; opacity: 0; transform: translateY(8px); transition: opacity 0.35s, transform 0.35s; }
 #wave-banner.show { opacity: 1; transform: none; }
 #wave-label { font-family: var(--f-display); font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.4em; padding-left: 0.4em; text-shadow: 0 2px 22px #000; }
@@ -167,6 +162,16 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .panel { display: grid; gap: 16px; justify-items: center; text-align: center; width: min(460px, 100%); }
 .panel h2 { font-family: var(--f-display); font-size: clamp(34px, 6vw, 48px); letter-spacing: 0.3em; padding-left: 0.3em; margin: 0; text-wrap: balance; }
 .panel p { margin: 0; color: var(--ash-dim); font-size: 14px; letter-spacing: 0.06em; }
+#stat-select { overflow: auto; }
+#stat-select .panel { gap: 10px; padding: 12px; }
+#stat-select h2 { font-size: clamp(24px, 6vw, 36px); letter-spacing: 0.1em; }
+.stat-options { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stat-option { display: grid; gap: 3px; min-height: 66px; padding: 8px; border: 1px solid #8a5b42; background: #291a15; text-align: left; }
+.stat-option:hover:not(:disabled) { border-color: var(--ember); }
+.stat-option:disabled { opacity: 0.52; cursor: default; }
+.stat-option strong { font-size: 16px; }
+.stat-rank { color: #ffd080; font-size: 13px; }
+.stat-effect { color: var(--ash-dim); font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; border-top: 1px solid rgba(233,221,210,0.15); border-bottom: 1px solid rgba(233,221,210,0.15); }
 .stats div { display: grid; gap: 2px; padding: 12px 4px; }
 .stats dt { font-size: 10px; letter-spacing: 0.24em; color: var(--ash-dim); }
@@ -234,7 +239,6 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <div id="combo" hidden><span id="combo-n">0</span><small>HITS</small></div>
   <div id="callout"></div>
   <div id="tip"></div>
-  <div id="levelup"><span class="lu-head">LEVEL UP</span><span id="lu-lv">Lv 2</span><span id="lu-perk"></span></div>
   <div id="wave-banner"><div id="wave-label">第一波</div><div id="wave-sub"></div></div>
   <div id="stick-zone"><div class="stick-hint">移動</div><div class="stick-base"></div><div class="stick-knob"></div></div>
   <div class="pad">
@@ -242,6 +246,19 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
     <button id="btn-dodge" aria-label="回避"><span class="k">避</span><span class="s">回避</span></button>
     <button id="btn-heavy" aria-label="回転斬り"><span class="k">重</span><span class="s">回転</span></button>
     <button id="btn-attack" aria-label="攻撃"><span class="k">斬</span><span class="s">連撃</span></button>
+  </div>
+</div>
+
+<div id="stat-select" class="overlay" role="dialog" aria-modal="true" aria-labelledby="stat-title" aria-describedby="stat-points" hidden>
+  <div class="panel">
+    <h2 id="stat-title">強化するステータスを選ぶ</h2>
+    <p id="stat-points" aria-live="polite"></p>
+    <div class="stat-options">
+      <button class="stat-option" data-stat="health"><strong>体力</strong><span class="stat-rank"></span><span class="stat-effect">最大体力が増える</span></button>
+      <button class="stat-option" data-stat="power"><strong>攻撃力</strong><span class="stat-rank"></span><span class="stat-effect">ダメージと吹き飛ばしが強くなる</span></button>
+      <button class="stat-option" data-stat="technique"><strong>技術</strong><span class="stat-rank"></span><span class="stat-effect">斬を長押ししたときの連撃数が増える</span></button>
+      <button class="stat-option" data-stat="dodge"><strong>回避</strong><span class="stat-rank"></span><span class="stat-effect">回避の無敵が早く始まる</span></button>
+    </div>
   </div>
 </div>
 
