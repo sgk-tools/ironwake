@@ -677,6 +677,7 @@ function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
   if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
   h.act = { name, t: 0, def, hitDone: false, swung: false, startT: G.time };
+  { const [fx_, fy_] = input.move(); h.flowAng = Math.hypot(fx_, fy_) > 0.3 ? Math.atan2(-fx_, fy_) : null; h.faceTo = null; }
   h.attackId++;
   const aim = h.aimNext !== false; h.aimNext = true;
   if (aim && def.type && name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') {
@@ -783,6 +784,57 @@ const TURN_AXIS = {
 const HEAVY_SPIN = new Set(['SPIN_IN', 'SPIN_LOOP']);
 const HEAVY_SPIN_KB = 3.0;          // x charge bonus below; aims for ~20-25 m on grunts
 
+// ---- flowing cuts: turning the stick in the middle of a slash redirects the blade
+// While the attack button is held (or was pressed a moment ago), moving the stick to a new direction part-way
+// through a cut starts a new cut straight away: the hero turns and steps toward the stick and the blade
+// travels the way the hero turned. The cut depends on how far and which way the stick turned (45 / 90 /
+// 135 degrees left or right, straight back, or forward from neutral), each with several lines (high, mid,
+// low, rising, falling), and three turns in a row the same way roll into a spin. No two in a row repeat.
+const FLOW = {
+  L45: ['CROSS', 'DOWNCUT', 'HIGHCUT'], L90: ['L1', 'LOWSWEEP', 'HIGHCUT'], L135: ['L1B', 'RISECUT', 'LOWSWEEP'],
+  R45: ['CROSS2', 'DOWNCUT', 'HIGHCUT2'], R90: ['L2', 'LOWSWEEP2', 'HIGHCUT2'], R135: ['L2B', 'RISECUT', 'LOWSWEEP2'],
+  BACK: ['REVSPIN', 'SPIN1', 'UPPER', 'L4'], FWD: ['DOWNCUT', 'STAB', 'RISECUT', 'VCUT'],
+};
+const FLOW_SPIN = { L: ['SPIN1', 'L4'], R: ['REVSPIN'] };
+const NO_FLOW = new Set(['CHARGE', 'SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'RAGE', 'HURT', 'DODGE', 'DEATH', 'CLASH', 'CLASH_FOLLOWUP', 'CLASH_RECOIL', 'MIKIRI_L', 'MIKIRI_R', 'MIKIRI_B']);
+const FLOW_TURN = 0.6;          // radians the stick must move from the direction of the current cut
+function flowBucket(turn) {
+  const a = Math.abs(turn), side = turn > 0 ? 'L' : 'R';
+  if (a < 0.4) return 'FWD';
+  if (a > 2.75) return 'BACK';
+  return side + (a < 1.18 ? '45' : a < 1.97 ? '90' : '135');
+}
+// returns true when a redirect started
+function tryFlow() {
+  const h = hero, a = h.act;
+  if (!a || !a.def.type || NO_FLOW.has(a.name) || a.def.clashLocked) return false;
+  if (!(input.held.has('attack') || G.time - (h.lastAtkT ?? -9) < 0.45)) return false;
+  // part-way through the cut: its first half has to play (and hit) before it can be turned
+  const mid = a.def.active[0] + (a.def.active[1] - a.def.active[0]) * 0.5;
+  if (a.t < mid || (a.def.impact && !a.hitDone)) return false;
+  const [mx, my] = input.move();
+  if (Math.hypot(mx, my) < 0.5) return false;
+  const ang = Math.atan2(-mx, my);
+  if (h.flowAng != null && Math.abs(angLerp(h.flowAng, ang, 1) - h.flowAng) < FLOW_TURN) return false;
+  const turn = angLerp(h.face, ang, 1) - h.face;
+  const bucket = flowBucket(turn), sense = bucket[0] === 'L' ? 'L' : bucket[0] === 'R' ? 'R' : null;
+  // same way three times running = roll into a spin
+  if (sense && sense === h.flowSense && G.time - (h.flowT || 0) < 0.9) h.flowRun = (h.flowRun || 1) + 1; else h.flowRun = 1;
+  h.flowSense = sense; h.flowT = G.time;
+  let name;
+  if (sense && h.flowRun >= 3) { name = pickFrom(FLOW_SPIN[sense], a.name); h.flowRun = 0; }
+  else name = pickFrom(FLOW[bucket], a.name);
+  h.aimNext = false;
+  startAction(name);
+  h.act.flowed = true; h.act.bucket = bucket;
+  // the blade is already moving: skip most of the wind-up
+  if (!TURN_AXIS[name]) h.act.t = Math.min(0.07, h.act.def.active[0] * 0.6);
+  h.faceTo = ang; h.flowAng = ang;
+  h.lightCount = (h.lightCount || 0) + 1;
+  G.flowCuts = (G.flowCuts || 0) + 1;
+  return true;
+}
+
 function updateHero(dt) {
   const h = hero;
   if (h.dead) {
@@ -806,6 +858,7 @@ function updateHero(dt) {
     h.rage = 0; h.rageT = 12; startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
   const wantAttack = input.consume('attack') || (input.held.has('attack') && !h.act);
+  if (wantAttack) h.lastAtkT = G.time;
   const wantHeavy = input.consume('heavy');
   const wantDodge = input.consume('dodge');
   const act = h.act;
@@ -813,6 +866,7 @@ function updateHero(dt) {
   const mk = !locked && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
   if (mk) startMikiri(mk);
   else if (locked) { /* ignore input */ }
+  else if (!wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE' && (act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
     if (wantHeavy) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
@@ -837,6 +891,11 @@ function updateHero(dt) {
     a.t += dt * (d.type ? speedK : 1);
     sampleKeys(d.keys, a.t, h.target);
     if (d.mikiri) mikiriMove(a);
+    if (a.flowed && h.faceTo != null) {
+      h.face = angLerp(h.face, h.faceTo, Math.min(1, dt * 16));
+      // step into the new direction on top of the cut's own lunge
+      if (a.t < 0.22) { h.x += Math.sin(h.faceTo) * 3.2 * dt; h.z += Math.cos(h.faceTo) * 3.2 * dt; }
+    }
     if (d.clash) clashStep(a);
     if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
@@ -1878,7 +1937,7 @@ async function boot() {
     sel.value = 'standard'; $('.weapon-choice').hidden = EXTRA_WEAPONS.length === 0; }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));
