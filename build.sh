@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 mkdir -p dist/assets
 npx esbuild src/main.js --bundle --minify --format=iife --target=es2020,safari15 --outfile=dist/game.js --log-level=warning
 cp src/index.html dist/index.html
-for f in hero grunt boss sword weapons props; do cp assets/$f.glb dist/assets/; done
+for f in hero grunt boss sword weapons props axe; do cp assets/$f.glb dist/assets/; done
 node tools/glb2json.js dist/assets/*.glb
 cp assets/*.jpg assets/skeleton.json dist/assets/ 2>/dev/null || true
 # local test page with the document skeleton the artifact host adds

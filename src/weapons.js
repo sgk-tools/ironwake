@@ -87,9 +87,10 @@ function makeHalberd() {
   return g;
 }
 
-// blade = segment used for hit detection and the trail (local Y); deco = where corruption spikes grow
+// blade = segment used for hit detection and the trail (local Y); deco = where corruption spikes grow;
+// glb = baked Blender model (assets/<glb>.glb, mesh of the same name) used instead of make() when present
 export const BUILTIN_WEAPONS = [
-  { id: 'axe', label: '両刃の大斧', make: makeAxe, blade: { hilt: V(0, 0.7, 0), trail: V(0, 1.3, 0), tip: V(0, 2.3, 0) }, deco: { x: 0.05, y0: 0.6, y1: 1.4 } },
+  { id: 'axe', label: '両刃の大斧', glb: 'axe', make: makeAxe, blade: { hilt: V(0, 0.7, 0), trail: V(0, 1.3, 0), tip: V(0, 2.3, 0) }, deco: { x: 0.05, y0: 0.6, y1: 1.4 } },
   { id: 'longsword', label: '細身の長大剣', make: makeLongsword, blade: { hilt: V(0, 0.48, 0), trail: V(0, 1.4, 0), tip: V(0, 2.65, 0) }, deco: { x: 0.13, y0: 0.7, y1: 2.2 } },
   { id: 'maul', label: '棘の鉄槌', make: makeMaul, blade: { hilt: V(0, 0.8, 0), trail: V(0, 1.4, 0), tip: V(0, 2.25, 0) }, deco: { x: 0.05, y0: 0.6, y1: 1.6 } },
   { id: 'halberd', label: '十文字戟', make: makeHalberd, blade: { hilt: V(0, 0.8, 0), trail: V(0, 1.6, 0), tip: V(0, 2.8, 0) }, deco: { x: 0.045, y0: 0.5, y1: 1.4 } },
@@ -116,7 +117,7 @@ export function applyGrowth(entry, tier) {
     if (!m.userData.baseMat) { m.userData.baseMat = m.material; m.material = m.material.clone(); m.userData.baseColor = m.material.color.clone(); }
     const mat = m.material;
     mat.color.copy(m.userData.baseColor).multiplyScalar(1 - 0.1 * tier);
-    if (mat.emissive) { mat.emissive.setRGB(0.5, 0.03, 0.02); mat.emissiveIntensity = 0.012 * tier; }   // the scene is exposed brightly: keep this faint
+    if (mat.emissive) { mat.emissive.setRGB(0.5, 0.03, 0.02); mat.emissiveIntensity = 0.007 * tier; }   // the scene is exposed brightly: keep this faint
   });
   // rebuild the decorations for this tier
   if (entry.corruption) { root.remove(entry.corruption); entry.corruption.traverse(o => { if (o.isMesh) { if (!o.userData.sharedGeo) o.geometry.dispose(); o.material.dispose(); } }); }
@@ -144,7 +145,12 @@ export function applyGrowth(entry, tier) {
     // halo: an additive red shell around the blade part
     let blade = null; eachMesh(root, (m) => { if (!blade && (m.name === 'blade' || root.isMesh)) blade = m; });
     if (blade) {
-      const halo = mark(new THREE.Mesh(blade.geometry, new THREE.MeshBasicMaterial({ color: 0xff2408, transparent: true, opacity: 0.05 + 0.03 * (tier - 3), blending: THREE.AdditiveBlending, depthWrite: false })));
+      // additive shell, cut off below the blade so the grip does not glow
+      const halo = mark(new THREE.Mesh(blade.geometry, new THREE.ShaderMaterial({
+        uniforms: { uOpacity: { value: 0.05 + 0.03 * (tier - 3) }, uY0: { value: deco.y0 - 0.1 } },
+        vertexShader: 'varying float vY; void main() { vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform float uOpacity; uniform float uY0; varying float vY; void main() { if (vY < uY0) discard; gl_FragColor = vec4(vec3(1.0, 0.14, 0.03) * uOpacity * smoothstep(uY0, uY0 + 0.25, vY), 1.0); }',
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
       // thin blades get a fat shell; a thick head (the maul) only a slight one
       blade.geometry.computeBoundingBox(); const bb = blade.geometry.boundingBox, thick = bb.max.z - bb.min.z;
       halo.userData.sharedGeo = true; halo.scale.set(1.12, 1.01, thick > 0.2 ? 1.15 : 3.2);
@@ -159,6 +165,6 @@ export function pulseWeapon(entry, time) {
   if (!entry || !entry.tier) return;
   const p = 0.5 + 0.5 * Math.sin(time * 5.2);
   if (entry.core) entry.core.material.emissiveIntensity = 0.35 + 0.5 * p;
-  if (entry.halo) entry.halo.material.opacity = (0.05 + 0.03 * (entry.tier - 3)) * (0.7 + 0.6 * p);
+  if (entry.halo) entry.halo.material.uniforms.uOpacity.value = (0.05 + 0.03 * (entry.tier - 3)) * (0.7 + 0.6 * p);
 }
 export const GROW_TEXT = [null, '武器が血を吸い、微かに赤く脈打ち始めた', '武器から棘が生え、ひと回り大きくなった', '赤い核が宿り、刃が瘴気を帯びた', '鉄塊は禍々しい魔の武器と化した'];

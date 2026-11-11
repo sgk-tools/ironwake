@@ -105,6 +105,10 @@ async function loadAll() {
   ]);
   const parts = (g) => { const o = {}; g.scene.traverse(c => { if (c.isMesh) o[c.name] = c; }); return o; };
   A = { hero: parts(hero), grunt: parts(grunt), boss: parts(boss), sword: parts(sword), weapons: parts(weapons), props: parts(props), skel, gcol, gnrm, grough, sky };
+  // baked models for the built-in weapons that have one (the others are built in code); a missing file
+  // just falls back to the coded shape
+  A.wglb = {};
+  await Promise.all(BUILTIN_WEAPONS.filter(w => w.glb).map(w => loadG(w.glb).then(g => { A.wglb[w.glb] = parts(g); }).catch(() => {})));
 }
 
 // ======================================================================= rigs
@@ -640,7 +644,9 @@ function makeHero() {
   const weapons = { standard: { mesh: sw, blade: STANDARD_BLADE, deco: STANDARD_DECO } };
   // built-in weapon types (src/weapons.js), then any locally registered extras
   for (const w of [...BUILTIN_WEAPONS, ...EXTRA_WEAPONS]) {
-    const mesh = w.make();
+    const baked = w.glb && A.wglb[w.glb]?.[w.glb];
+    const mesh = baked ? new THREE.Mesh(baked.geometry, baked.material) : w.make();
+    if (baked) { mesh.name = 'blade'; mesh.castShadow = true; }
     mesh.position.copy(sw.position); mesh.rotation.copy(sw.rotation); mesh.visible = false;
     rig.j.handR.add(mesh);
     weapons[w.id] = { mesh, blade: w.blade, deco: w.deco };
