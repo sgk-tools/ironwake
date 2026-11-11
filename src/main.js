@@ -1114,6 +1114,9 @@ function startClash() {
   const h = hero, b = boss;
   startAction('CLASH');
   h.act.beat = 0; h.iframe = HERO_ACTIONS.CLASH.dur + 0.3;
+  // swing round to face the boss side-on to the camera so both blades stay in view
+  h.act.a0 = Math.atan2(h.x - b.x, h.z - b.z);
+  h.act.a1 = Math.sin(h.act.a0) >= 0 ? Math.PI / 2 : -Math.PI / 2;
   h.face = Math.atan2(b.x - h.x, b.z - h.z);
   b.face = Math.atan2(h.x - b.x, h.z - b.z);
   setBoss('clash');
@@ -1126,7 +1129,7 @@ function clashStep(a) {
   const k = Math.min(CLASH_N - 1, Math.floor(a.t / CLASH_BEAT)), u = a.t - k * CLASH_BEAT;
   // lean in on the cut, give ground on the recoil
   const gap = 2.7 * bossScale() / 2.3 + (u < CLASH_IMPACT ? 0.25 - 0.4 * (u / CLASH_IMPACT) : -0.15 + 0.4 * ((u - CLASH_IMPACT) / (CLASH_BEAT - CLASH_IMPACT)));
-  const ang = Math.atan2(h.x - b.x, h.z - b.z);
+  const w = Math.min(1, a.t / 0.3), ang = angLerp(a.a0, a.a1, w * w * (3 - 2 * w));
   h.x = b.x + Math.sin(ang) * gap; h.z = b.z + Math.cos(ang) * gap;
   h.face = Math.atan2(b.x - h.x, b.z - h.z); b.face = ang;
   if (a.beat < CLASH_N && a.t >= a.beat * CLASH_BEAT + CLASH_IMPACT) {
