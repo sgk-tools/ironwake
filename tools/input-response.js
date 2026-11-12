@@ -107,10 +107,11 @@ async function run() {
     for (const [name, passed] of Object.entries(checks)) assert.ok(passed, name);
     for (const chain of [low, max]) {
       assert.ok(['SPIN1', 'REVSPIN'].includes(chain.moves[1]?.name));
-      assert.ok(['RFLIP', 'L6'].includes(chain.moves[2]?.name));
+      assert.ok(['JUMP_SPIN', 'JUMP_FLIP'].includes(chain.moves[2]?.name));
       assert.ok(Math.abs(chain.moves[2].yaw) < Math.PI, 'yaw unwound after full turn');
     }
     assert.equal(max.moves.length, 12);
+    assert.deepEqual([max.moves[2].name, max.moves[8].name], ['JUMP_SPIN', 'JUMP_FLIP']);
     assert.equal(max.idle, false);
     assert.ok(Math.abs((max.moves[2].time - max.moves[0].time) - (low.moves[2].time - low.moves[0].time)) < 0.07);
     assert.deepEqual(errors, []);

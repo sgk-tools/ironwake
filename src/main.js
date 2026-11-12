@@ -744,9 +744,9 @@ const CUT_ANGLES = {
   R45: -Math.PI / 4, R90: -Math.PI / 2, R135: -Math.PI * 3 / 4,
 };
 const DIRECTIONAL_CUTS = {
-  FWD: { open: 'DASH', light: ['RFLIP', 'L6', 'L5', 'STAB'], heavy: ['RFLIP', 'RLEAP'] },
+  FWD: { open: 'DASH', light: ['JUMP_FLIP', 'L6', 'JUMP_SPIN', 'L5'], heavy: ['JUMP_FLIP', 'JUMP_SPIN'] },
   L45: { open: 'HIGHCUT', light: ['VCUT', 'VAULT', 'DASH', 'L1B'], heavy: ['VAULT', 'FIN2'] },
-  R45: { open: 'HIGHCUT2', light: ['DOWNCUT', 'L6', 'STEP_CUT', 'L2B'], heavy: ['L6', 'L5'] },
+  R45: { open: 'HIGHCUT2', light: ['JUMP_SPIN', 'L6', 'DOWNCUT', 'STEP_CUT'], heavy: ['L6', 'L5'] },
   L90: { open: 'CROSS', light: ['SPIN1', 'LOWSWEEP', 'L1', 'HIGHCUT'], heavy: ['L4', 'RSPIN2'] },
   R90: { open: 'CROSS2', light: ['REVSPIN', 'LOWSWEEP2', 'L2', 'HIGHCUT2'], heavy: ['REVSPIN', 'RSPIN2'] },
   L135: { open: 'L1B', light: ['LOWSWEEP', 'RISECUT', 'BACK_LEAP', 'CROSS'], heavy: ['BACK_LEAP', 'DRAG'] },
@@ -785,8 +785,8 @@ function pickLight(prev, dir = readCutDirection()) {
       return spin === prev ? (spin === 'SPIN1' ? 'REVSPIN' : 'SPIN1') : spin;
     }
     if (step === 2) {
-      const cut = alternate ? 'RFLIP' : 'L6';
-      return cut === prev ? (cut === 'RFLIP' ? 'L6' : 'RFLIP') : cut;
+      const cut = alternate ? 'JUMP_SPIN' : 'JUMP_FLIP';
+      return cut === prev ? (cut === 'JUMP_SPIN' ? 'JUMP_FLIP' : 'JUMP_SPIN') : cut;
     }
     return pickFrom(chain[hero.comboIdx], prev);
   }
@@ -946,7 +946,7 @@ function rageMult() { return hero.rageT > 0 ? 1.35 : 1; }
 const TURN_AXIS = {
   SPIN: 'rootYaw', SPIN_LOOP: 'rootYaw', L4: 'rootYaw', SPIN1: 'rootYaw',
   REVSPIN: 'rootYaw', RSPIN2: 'rootYaw', SPIN_IN: 'rootYaw',
-  RFLIP: 'rootPitch', WHEEL: 'rootPitch',
+  RFLIP: 'rootPitch', WHEEL: 'rootPitch', JUMP_FLIP: 'rootPitch', JUMP_SPIN: 'rootYaw',
 };
 // heavy (charged) spin pushes grunts farther than the spins inside the light combo
 const HEAVY_SPIN = new Set(['SPIN_IN', 'SPIN_LOOP']);
@@ -973,7 +973,7 @@ function flowBucket(turn) {
   return side + (a < 1.18 ? '45' : a < 1.97 ? '90' : '135');
 }
 function queueLateSideSpin(a) {
-  if (!a?.light || a.queued === 'heavy' || a.sideSpin || hero.lightCount >= lightLimit()) return false;
+  if (!a?.light || a.queued === 'heavy' || a.queuedManual || hero.lightCount >= lightLimit()) return false;
   const dir = readCutDirection();
   const previous = a.sideInput === undefined ? a.cutDir : a.sideInput;
   a.sideInput = dir;
@@ -1123,7 +1123,7 @@ function updateHero(dt) {
       if (direction) act.nextPattern = CLASH_PATTERNS[direction];
     }
   }
-  else if (!sliding && !wantDodge && !wantHeavy && queueLateSideSpin(act)) { /* spin queued at the end of the cut */ }
+  else if (!sliding && !wantDodge && !wantHeavy && !attackPressed && queueLateSideSpin(act)) { /* spin queued at the end of the cut */ }
   else if (!sliding && !wantDodge && !wantHeavy && !cutDirection && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) {

@@ -631,3 +631,35 @@ HERO_ACTIONS.BACK_LEAP = {
     [0.86, HERO.idle, 'io'],
   ],
 };
+
+// Forward jump attacks use different rotation axes and complete a full turn before landing.
+const jumpFlip = HERO_ACTIONS.RFLIP;
+HERO_ACTIONS.JUMP_FLIP = {
+  ...jumpFlip, dur: 0.72, active: [0.14, 0.52], chainAt: 0.55, lunge: [0.08, 0.46, 8.2],
+  keys: [
+    [0, HERO.idle],
+    [0.09, { ...jumpFlip.keys[1][1], rootY: -0.28 }, 'out'],
+    [0.30, { ...jumpFlip.keys[2][1], rootY: 1.45 }, 'lin'],
+    [0.47, { ...jumpFlip.keys[3][1], rootY: 0.12 }, 'lin'],
+    [0.54, { ...jumpFlip.keys[3][1], rootY: -0.25 }, 'out'],
+    [0.72, { ...HERO.idle, rootPitch: 2 * Math.PI }, 'io'],
+  ],
+};
+
+const airborneSpin = {
+  ...pose('SPIN', 0), rootPitch: 0.06, torso: [0.18, 0, 0],
+  thighR: [-0.95, 0, 0], shinR: [1.25, 0, 0], thighL: [-0.6, 0, 0], shinL: [0.9, 0, 0],
+};
+HERO_ACTIONS.JUMP_SPIN = {
+  ...HERO_ACTIONS.SPIN1, dur: 0.72, active: [0.14, 0.49], chainAt: 0.56,
+  dmg: 33, kb: 6.5, up: 3, lunge: [0.08, 0.45, 8.2], body: 1.75, bodyAll: true,
+  keys: [
+    [0, HERO.idle],
+    [0.09, { ...pose('R2L', 0), rootY: -0.29, rootYaw: 0 }, 'out'],
+    [0.17, { ...airborneSpin, rootY: 0.86, rootYaw: 0 }, 'out'],
+    [0.32, { ...airborneSpin, rootY: 1.42, rootYaw: Math.PI }, 'lin'],
+    [0.47, { ...airborneSpin, rootY: 0.26, rootYaw: 2 * Math.PI }, 'lin'],
+    [0.54, { ...pose('R2L', 4), rootY: -0.25, rootYaw: 2 * Math.PI }, 'out'],
+    [0.72, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
+  ],
+};

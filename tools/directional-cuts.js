@@ -93,6 +93,28 @@ async function run() {
       const rearTravel = h.z - startZ;
       const face = h.face;
 
+      const jumpMoves = [];
+      for (const horizontal of [false, true]) {
+        reset();
+        await open('F');
+        if (horizontal) await follow('F');
+        const name = await follow('F', true, true);
+        const z0 = h.z;
+        const target = { ...enemy, x: h.x + 0.95, z: z0 + 2.5, hp: 1000, dead: false, lastHit: -1,
+          state: 'hit', t: -1, pose: {}, vx: 0, vy: 0, vz: 0, y: 0 };
+        g.enemies.push(target);
+        let apex = 0, midairTurn = 0, turn = 0;
+        while (name && h.act?.name === name) {
+          const height = h.target.rootY || 0;
+          const angle = Math.abs((horizontal ? h.pose.rootYaw : h.pose.rootPitch) || 0);
+          apex = Math.max(apex, height);
+          turn = Math.max(turn, angle);
+          if (height >= 0.55) midairTurn = Math.max(midairTurn, angle);
+          await frame();
+        }
+        jumpMoves.push({ name, apex, midairTurn, turn, travel: h.z - z0, damage: 1000 - target.hp });
+      }
+
       reset();
       const attackButton = document.querySelector('#btn-attack');
       const heavyButton = document.querySelector('#btn-heavy');
@@ -105,7 +127,7 @@ async function run() {
       touch(heavyButton, 'pointerdown', 3); touch(heavyButton, 'pointerup', 3);
       await frame();
       const touchFinisher = h.act?.name;
-      return { matrix, forwardFlip, forwardSlam, fallingCut, backSlam, high, hit, rearTravel, face, targetDamage: 1000 - enemy.hp, touchOpener, touchFinisher };
+      return { matrix, forwardFlip, forwardSlam, fallingCut, backSlam, high, hit, rearTravel, face, targetDamage: 1000 - enemy.hp, jumpMoves, touchOpener, touchFinisher };
     });
 
     const { matrix } = results;
@@ -114,7 +136,7 @@ async function run() {
     assert.ok(matrix.every(row => row.lightCount === (row.heavy ? 0 : 2)));
     const move = (first, next, heavy) => matrix.find(row => row.first === first && row.next === next && row.heavy === heavy).finisher;
     for (const heavy of [false, true]) {
-      assert.equal(move('F', 'F', heavy), 'RFLIP');
+      assert.equal(move('F', 'F', heavy), 'JUMP_FLIP');
       assert.equal(move('L', 'L', heavy), heavy ? 'L4' : 'SPIN1');
       assert.equal(move('R', 'R', heavy), 'REVSPIN');
       assert.equal(move('L', 'R', heavy), 'XCUT_REV');
@@ -123,15 +145,20 @@ async function run() {
       assert.equal(move('N', 'B', heavy), heavy ? 'RETREAT_SWEEP' : 'BACKCUT');
       assert.equal(move('B', 'B', heavy), heavy ? 'FIN2' : 'DOWNCUT');
     }
-    assert.equal(results.forwardFlip, 'RFLIP');
+    assert.equal(results.forwardFlip, 'JUMP_FLIP');
     assert.equal(results.forwardSlam, 'L6');
     assert.equal(results.fallingCut, 'DOWNCUT');
     assert.equal(results.backSlam, 'BACK_LEAP');
     assert.ok(results.high >= 1.2 && results.hit && results.targetDamage > 0 && results.rearTravel < -2 && Math.abs(results.face) < 0.01);
+    assert.deepEqual(results.jumpMoves.map(move => move.name), ['JUMP_FLIP', 'JUMP_SPIN']);
+    for (const move of results.jumpMoves) {
+      assert.ok(move.apex >= 1.2 && move.midairTurn > Math.PI && move.turn >= 6 && move.travel > 2, JSON.stringify(move));
+    }
+    assert.ok(results.jumpMoves[1].damage > 0, 'airborne horizontal spin must hit nearby mobs');
     assert.equal(results.touchOpener, 'HIGHCUT');
     assert.equal(results.touchFinisher, 'VAULT');
     assert.deepEqual(errors, []);
-    console.log('162 direction/button sequences, buffered jumps, rearward motion, landing impact and touch controls passed.');
+    console.log('162 direction/button sequences, buffered jumps, rearward motion, landing impact, both forward jump rotations and touch controls passed.');
   } finally {
     await browser.close();
   }
