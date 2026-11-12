@@ -24,8 +24,8 @@ const { chromium } = require('playwright');
     const ONLY = process.argv[2] ? process.argv[2].split(',') : null;   // optional attack filter, e.g. leap,charge
     const attacks = (await p.evaluate(() => [...window.__game.boss().attacks])).filter(a => !ONLY || ONLY.includes(a));
     for (const atk of attacks) {
-      const rolls = { draw: 0.499, hero: 0.5, boss: 0.75 };
-      for (const mode of ['none', 'early', 'draw', 'hero', 'boss', 'side', 'back']) {
+      const rolls = { draw: 0.499, hero: 0.5, boss: 0.75, redirect: 0.499 };
+      for (const mode of ['none', 'early', 'draw', 'hero', 'boss', 'side', 'back', 'redirect', 'precise']) {
         const roll = rolls[mode];
         const r = await p.evaluate(({ atk, mode, roll }) => new Promise(res => {
           const g = window.__game, bb = g.boss(), h = g.hero();
@@ -35,14 +35,16 @@ const { chromium } = require('playwright');
           bb.x = 0; bb.z = 0; bb.y = 0; bb.face = 0; bb.hp = bb.maxHp; bb.poise = 0; bb.speed = bb.speed || 1;
           h.x = 0; h.z = far ? 9 : 3.6 * bb.scale / 2.3; h.face = Math.PI; h.act = null; h.iframe = 0; h.dead = false;
           h.maxHp = h.hp = 1e5; h.rageT = 0;
-          g.input.keys.clear(); g.input.clear();
+          g.input.keys.clear(); g.input.clear(); g.input.held.clear();
+          g.input.mx = g.input.my = 0; h.lastSlashPress = null;
           const p0 = g.G.parries || 0, m0 = g.G.mikiriHits || 0, c0 = g.G.clashHits || 0, hp0 = h.hp;
           g.setBoss(atk + 'Wind'); bb.tele = false; bb.glinted = false;
           const expectedHeroDamage = 160 * bb.dmgMul;
           const expectedBossDamage = g.HERO_ACTIONS.L1.dmg;
           const random = Math.random;
           let rolled = false, sawRecoil = false;
-          let bossHpAtClash;
+          let bossHpAtClash, initialPattern, sawRedirect = false, sawDisarm = false, sawHitstop = false, sawClashText = false;
+          const cuts = new Set();
           if (roll !== undefined) {
             Math.random = () => {
               const a = h.act;
@@ -57,24 +59,45 @@ const { chromium } = require('playwright');
           const tick = () => {
             if (bb.glinted) glint = true;
             // The initiating slash can hit before it parries. Count damage from the exchange only.
-            if (h.act?.name === 'CLASH') bossHpAtClash ??= bb.hp;
+            const a = h.act;
+            if (a?.name === 'CLASH' || a?.name === 'CLASH_DISARM') bossHpAtClash ??= bb.hp;
+            if (a?.name === 'CLASH') {
+              if (a.cut) cuts.add(a.cut);
+              initialPattern ??= a.pattern;
+              if (mode === 'redirect' && a.beat === 1 && a.pattern === initialPattern && !a.nextPattern) {
+                const direction = h.face + (initialPattern[0] === 'CROSS' ? -1 : 1) * Math.PI / 2;
+                g.input.mx = -Math.sin(direction); g.input.my = Math.cos(direction);
+                g.input.press('attack'); g.input.held.delete('attack');
+              }
+              if (a.pattern !== initialPattern) {
+                sawRedirect = a.cut === (initialPattern[0] === 'CROSS' ? 'CROSS2' : 'CROSS') || sawRedirect;
+                g.input.mx = g.input.my = 0;
+              }
+            }
+            if (a?.name === 'CLASH_DISARM' && !bb.axe.visible && bb.droppedAxe?.mesh.parent) sawDisarm = true;
+            if (bossHpAtClash !== undefined && bb.hp < bossHpAtClash && g.G.hitstop >= 0.08) sawHitstop = true;
+            const callout = document.querySelector('#callout');
+            if (callout.classList.contains('show') && /鍔迫り合い|相打ち/.test(callout.textContent)) sawClashText = true;
             const eta = bb.strikeIn;
-            const at = mode === 'early' ? 1.1 : roll !== undefined ? 0.22 : 0.3;
+            const at = mode === 'precise' ? 0.045 : mode === 'early' ? 1.1 : roll !== undefined ? 0.22 : 0.3;
             if (!pressed && mode !== 'none' && eta != null && eta <= at) {
               pressed = true; if (key) g.input.keys.add(key); g.input.press('attack'); g.input.held.delete('attack');
             }
             if (h.act?.name === 'CLASH_RECOIL' && bb.state === 'clashRecoil') sawRecoil = true;
             const busy = h.act && (h.act.name.startsWith('MIKIRI') || h.act.def.clashLocked);
-            const done = !busy && (bb.state === 'walk' || bb.state === 'parried' || bb.state === 'stagger' || bb.state === 'leapLand' || bb.state === 'chargeStop');
+            const done = !busy && (mode === 'precise' && sawDisarm ? bb.state === 'walk'
+              : ['walk', 'parried', 'stagger', 'leapLand', 'chargeStop'].includes(bb.state));
             if ((done && performance.now() - t0 > 300) || performance.now() - t0 > 90000) {
-              g.input.keys.clear();
+              g.input.keys.clear(); g.input.mx = g.input.my = 0;
               Math.random = random;
               res({
                 atk, mode, state: bb.state, parried: (g.G.parries || 0) - p0,
                 mikiri: (g.G.mikiriHits || 0) - m0, clash: (g.G.clashHits || 0) - c0,
                 dmg: Math.round(hp0 - h.hp), bossDmg: Math.round((bossHpAtClash ?? bb.maxHp) - bb.hp),
                 expectedHeroDamage: Math.round(expectedHeroDamage), expectedBossDamage: Math.round(expectedBossDamage),
-                act: h.act?.name || null, glint, rolled, sawRecoil,
+                act: h.act?.name || null, glint, rolled, sawRecoil, sawRedirect, sawDisarm, sawHitstop, sawClashText,
+                cuts: [...cuts], axeRestored: bb.axe.visible && !bb.droppedAxe,
+                expectedDisarmDamage: g.HERO_ACTIONS.CLASH_DISARM.dmg,
               });
               return;
             }
@@ -84,11 +107,14 @@ const { chromium } = require('playwright');
           tick();
         }), { atk, mode, roll });
         // The winner lands exactly one hit and a draw staggers both without damage.
-        const exchange = r.rolled && r.parried === 1 && r.clash === 4;
+        const exchange = r.rolled && r.parried === 1 && r.clash === 4 && !r.sawClashText && r.cuts.length >= 3;
         const ok = mode === 'none' ? r.dmg > 0 && r.parried === 0
           : mode === 'early' ? r.parried === 0
           : mode === 'draw' ? exchange && r.dmg === 0 && r.bossDmg === 0 && r.sawRecoil
-          : mode === 'hero' ? exchange && r.dmg === 0 && r.bossDmg === r.expectedBossDamage
+          : mode === 'redirect' ? exchange && r.dmg === 0 && r.sawRedirect
+          : mode === 'precise' ? r.parried === 1 && r.clash === 0 && r.sawDisarm && r.axeRestored
+            && r.dmg === 0 && r.bossDmg === r.expectedDisarmDamage && r.sawHitstop
+          : mode === 'hero' ? exchange && r.dmg === 0 && r.bossDmg === r.expectedBossDamage && r.sawHitstop
           : mode === 'boss' ? exchange && r.dmg === r.expectedHeroDamage && r.bossDmg === 0
           : r.dmg === 0 && r.mikiri >= 1;
         results.push({ stage: stageIdx + 1, ...r, ok }); console.log(JSON.stringify(results[results.length - 1]));
