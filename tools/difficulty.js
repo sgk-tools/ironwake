@@ -12,9 +12,9 @@ async function run() {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
     await page.locator('#btn-start').waitFor({ timeout: 120000 });
-    const choices = page.locator('.difficulty-choice label');
+    const choices = page.locator('.title-inner .difficulty-choice label');
     assert.equal(await choices.count(), 3);
-    assert.ok(await page.locator('input[value=normal]').isChecked());
+    assert.ok(await page.locator('input[name=difficulty][value=normal]').isChecked());
     for (const size of [{ width: 393, height: 852 }, { width: 667, height: 375 }]) {
       await page.setViewportSize(size);
       for (const label of [...await choices.all(), page.locator('#btn-start')]) {
@@ -29,7 +29,7 @@ async function run() {
 
     const select = async name => {
       await choices.filter({ hasText: name.toUpperCase() }).tap();
-      assert.ok(await page.locator('input[value=' + name + ']').isChecked());
+      assert.ok(await page.locator('input[name=difficulty][value=' + name + ']').isChecked());
     };
     const current = () => page.evaluate(() => {
       const g = window.__game, h = g.hero();

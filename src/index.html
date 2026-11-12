@@ -177,13 +177,21 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .panel { display: grid; gap: 16px; justify-items: center; text-align: center; width: min(460px, 100%); }
 .panel h2 { font-family: var(--f-display); font-size: clamp(34px, 6vw, 48px); letter-spacing: 0.3em; padding-left: 0.3em; margin: 0; text-wrap: balance; }
 .panel p { margin: 0; color: var(--ash-dim); font-size: 14px; letter-spacing: 0.06em; }
-#weapon-picker { grid-template-rows: minmax(0, 1fr); }
-#weapon-picker .panel { width: min(400px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; gap: 12px; padding: 16px; background: var(--ink); border: 1px solid #817258; border-radius: 6px; }
-#weapon-picker h2 { font-size: clamp(22px, 5vw, 30px); letter-spacing: 0.08em; }
-.weapon-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
-.weapon-options button { min-height: 44px; padding: 6px; border: 1px solid #817258; border-radius: 6px; background: #242019; }
-.weapon-options button[aria-pressed="true"] { border-color: var(--ember); background: #3a261c; color: #ffcf9a; }
-#weapon-picker-close { min-height: 44px; }
+#weapon-picker, #boss-setup { grid-template-rows: minmax(0, 1fr); }
+#weapon-picker .panel, #boss-setup .panel { width: min(400px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; gap: 12px; padding: 16px; background: var(--ink); border: 1px solid #817258; border-radius: 6px; }
+#weapon-picker h2, #boss-setup h2 { font-size: clamp(22px, 5vw, 30px); letter-spacing: 0.08em; }
+.weapon-options, .boss-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.weapon-options button, .boss-options button { min-height: 44px; padding: 6px; border: 1px solid #817258; border-radius: 6px; background: #242019; }
+.weapon-options button[aria-pressed="true"], .boss-options button[aria-pressed="true"] { border-color: var(--ember); background: #3a261c; color: #ffcf9a; }
+#weapon-picker-close, #btn-boss-mode, #btn-boss-close { min-height: 44px; }
+#boss-setup .panel { width: min(460px, 100%); gap: 8px; padding: 10px 14px; }
+@media (min-width: 520px) and (orientation: landscape) { .boss-options { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+#boss-setup .difficulty-choice { width: 100%; justify-content: center; }
+#boss-setup .difficulty-choice legend { text-align: center; }
+.boss-level-row { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+#boss-level { width: 5em; min-height: 44px; text-align: center; color: var(--ash); background: #242019; border: 1px solid #817258; border-radius: 6px; font: inherit; font-size: 16px; }
+#boss-setup .row { gap: 8px; }
+#btn-boss-start { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
 #stat-select { grid-template-rows: minmax(0, 1fr); background: rgba(10,5,4,0.55); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .stat-panel {
   box-sizing: border-box; width: min(900px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y;
@@ -259,6 +267,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
         </select>
       </div>
       <button class="btn-primary" id="btn-start">出陣</button>
+      <button type="button" class="btn-ghost" id="btn-boss-mode" aria-haspopup="dialog" aria-controls="boss-setup" aria-expanded="false">ボス戦</button>
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
@@ -270,6 +279,26 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <h2 id="weapon-picker-title">武器を選ぶ</h2>
       <div class="weapon-options"></div>
       <button type="button" class="btn-ghost" id="weapon-picker-close">閉じる</button>
+    </div>
+  </div>
+  <div id="boss-setup" class="overlay" role="dialog" aria-modal="true" aria-labelledby="boss-setup-title" hidden>
+    <div class="panel">
+      <h2 id="boss-setup-title">ボス戦</h2>
+      <div class="boss-options" id="boss-options" role="group" aria-label="対戦するボス"></div>
+      <fieldset class="difficulty-choice">
+        <legend>難易度</legend>
+        <label><input type="radio" name="boss-difficulty" value="easy"><span><b>EASY</b></span></label>
+        <label><input type="radio" name="boss-difficulty" value="normal" checked><span><b>NORMAL</b></span></label>
+        <label><input type="radio" name="boss-difficulty" value="hard"><span><b>HARD</b></span></label>
+      </fieldset>
+      <div class="boss-level-row">
+        <label for="boss-level">自分のレベル</label>
+        <input type="number" inputmode="numeric" id="boss-level" min="1" step="1" value="1">
+      </div>
+      <div class="row">
+        <button type="button" class="btn-primary" id="btn-boss-start">対戦する</button>
+        <button type="button" class="btn-ghost" id="btn-boss-close">閉じる</button>
+      </div>
     </div>
   </div>
 </section>

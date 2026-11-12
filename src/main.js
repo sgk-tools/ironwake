@@ -544,7 +544,7 @@ const DIFFICULTIES = {
   normal: { hp: 1, damage: 1, speed: 1 },
   hard: { hp: 1.35, damage: 1.4, speed: 1.15 },
 };
-const G = { substeps: 1, stageIdx: 0, difficulty: 'normal', introT: 0, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
+const G = { substeps: 1, stageIdx: 0, difficulty: 'normal', mode: 'campaign', introT: 0, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
 
 // Each stage: its waves (mix = spawn weights per enemy type), its boss and its lighting.
 const STAGES = [
@@ -890,6 +890,7 @@ function statPoints() {
 }
 
 function gainExp(n) {
+  if (G.mode === 'boss') return;
   const h = hero;
   if (h.level >= LEVEL_MAX) return;
   h.exp += n;
@@ -2032,7 +2033,7 @@ function damageBoss(dmg, stop = 0.095) {
     b.enraged = true; b.speed *= 1.25; b.dmgMul *= 1.15;
     b.mat.emissive.setRGB(0.25, 0.02, 0.0);
     showBanner('激昂', `${stage().boss.name}が怒り狂う`); sfx.play('roar'); G.shake = 0.8;
-    for (let i = 0; i < 8; i++) spawnEnemy(i % 2 ? 'lancer' : 'grunt');
+    if (G.mode !== 'boss') for (let i = 0; i < 8; i++) spawnEnemy(i % 2 ? 'lancer' : 'grunt');
   }
 }
 
@@ -2043,30 +2044,41 @@ function nextWave() {
   G.spawnLeft = w.total; G.spawnT = 1.5;
   showBanner(w.label, w.sub);
   sfx.play('wave');
-  if (w.boss) {
-    boss = boss || makeBoss();
-    const bc = stage().boss;
-    const rules = DIFFICULTIES[G.difficulty];
-    boss.maxHp = boss.hp = Math.round(bc.hp * rules.hp);
-    boss.speed = bc.speed * rules.speed; boss.dmgMul = bc.dmg * rules.damage;
-    boss.enrageOn = bc.enrage; boss.enraged = false;
-    boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint).multiplyScalar(2.0); boss.mat.emissive.setRGB(...(bc.glow || [0, 0, 0]));
-    boss.scale = bc.scale || 2.3; boss.rig.root.scale.setScalar(boss.scale); boss.y = 0; boss.tele = false;
-    boss.attacks = new Set(bc.attacks || ['cleave', 'slam', 'charge']);
-    $('#boss .name').textContent = bc.name;
-    // enter from the top of the screen (camera looks toward +Z), kept inside the arena
-    boss.x = hero.x * 0.6; boss.z = hero.z + 14;
-    const br = Math.hypot(boss.x, boss.z); if (br > ARENA - 4) { boss.x *= (ARENA - 4) / br; boss.z *= (ARENA - 4) / br; }
-    if (Math.hypot(boss.x - hero.x, boss.z - hero.z) < 9) { boss.x = hero.x * 0.3; boss.z = hero.z * 0.3 - Math.sign(hero.z || 1) * 6; }
-    boss.face = Math.atan2(hero.x - boss.x, hero.z - boss.z);
-    setBoss('roar'); boss.cd = 2; boss.rig.root.visible = true;
-    setTimeout(() => sfx.play('roar'), 400);
-    UI.bossBar.hidden = false;
-    { const k = window.matchMedia?.('(pointer: fine)').matches ? 'J' : '斬'; showTip(`武器が光ったら ${k} で弾く ／ 横・後ろ＋${k} で見切り ／ 打ち合い中は方向＋${k} で派生`); }
-  }
+  if (w.boss) spawnBoss();
+}
+
+function spawnBoss() {
+  boss = boss || makeBoss();
+  const bc = stage().boss;
+  const rules = G.mode === 'boss' && G.difficulty === 'easy'
+    ? { hp: 0.75, damage: 0.75, speed: 0.9 }
+    : DIFFICULTIES[G.difficulty];
+  boss.maxHp = boss.hp = Math.round(bc.hp * rules.hp);
+  boss.speed = bc.speed * rules.speed; boss.dmgMul = bc.dmg * rules.damage;
+  boss.enrageOn = bc.enrage; boss.enraged = false;
+  boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint).multiplyScalar(2.0); boss.mat.emissive.setRGB(...(bc.glow || [0, 0, 0]));
+  boss.scale = bc.scale || 2.3; boss.rig.root.scale.setScalar(boss.scale); boss.y = 0; boss.tele = false;
+  boss.attacks = new Set(bc.attacks || ['cleave', 'slam', 'charge']);
+  $('#boss .name').textContent = bc.name;
+  // enter from the top of the screen (camera looks toward +Z), kept inside the arena
+  boss.x = hero.x * 0.6; boss.z = hero.z + 14;
+  const br = Math.hypot(boss.x, boss.z); if (br > ARENA - 4) { boss.x *= (ARENA - 4) / br; boss.z *= (ARENA - 4) / br; }
+  if (Math.hypot(boss.x - hero.x, boss.z - hero.z) < 9) { boss.x = hero.x * 0.3; boss.z = hero.z * 0.3 - Math.sign(hero.z || 1) * 6; }
+  boss.face = Math.atan2(hero.x - boss.x, hero.z - boss.z);
+  setBoss('roar'); boss.cd = 2; boss.rig.root.visible = true;
+  setTimeout(() => sfx.play('roar'), 400);
+  UI.bossBar.hidden = false;
+  { const k = window.matchMedia?.('(pointer: fine)').matches ? 'J' : '斬'; showTip(`武器が光ったら ${k} で弾く ／ 横・後ろ＋${k} で見切り ／ 打ち合い中は方向＋${k} で派生`); }
 }
 
 function updateWaves(dt) {
+  if (G.mode === 'boss') {
+    if (G.waveIdx < 0 && (G.introT -= dt) <= 0) {
+      G.waveIdx = stage().waves.length - 1;
+      spawnBoss();
+    }
+    return;
+  }
   if (G.waveIdx < 0) { G.introT -= dt; if (G.introT <= 0) nextWave(); return; }
   const w = waveDef(); if (!w) return;
   const alive = enemies.filter(e => !e.dead).length;
@@ -2195,26 +2207,40 @@ function resetGame(keepLevel = false) {
   for (const k in hudCache) delete hudCache[k];
 }
 
-function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal') {
+function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal', mode = 'campaign') {
+  G.mode = mode;
   G.difficulty = difficulty === 'easy' || difficulty === 'hard' ? difficulty : 'normal';
-  const maxed = G.difficulty === 'easy';
+  const bossOnly = G.mode === 'boss';
+  const maxed = G.difficulty === 'easy' && !bossOnly;
   const pick = hero.weapons[$('#weapon-select').value] || hero.weapons.standard;
   for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick;
   hero.sword = pick.mesh;
   hero.blade = pick.blade;
   // the weapon grows more sinister with every stage already cleared
-  hero.weapon = pick; hero.growTier = applyGrowth(pick, maxed ? GROW_MAX : Math.min(GROW_MAX, stageIdx));
+  hero.weapon = pick; hero.growTier = applyGrowth(pick, G.difficulty === 'easy' ? GROW_MAX : Math.min(GROW_MAX, stageIdx));
   sfx.unlock(); sfx.play('ui'); sfx.startMusic();
   hero.level = maxed ? LEVEL_MAX : Number.isInteger(level) ? Math.min(LEVEL_MAX, Math.max(1, level)) : 1;
-  hero.exp = maxed ? 0 : exp;
-  hero.stats = maxed ? Object.fromEntries(STAT_KEYS.map(key => [key, STAT_MAX])) : loadStats(stats);
+  hero.exp = bossOnly || maxed ? 0 : exp;
+  if (bossOnly || maxed) {
+    const points = hero.level - 1;
+    hero.stats = Object.fromEntries(STAT_KEYS.map((key, index) =>
+      [key, 1 + Math.floor(points / STAT_KEYS.length) + Number(index < points % STAT_KEYS.length)]));
+  } else {
+    hero.stats = loadStats(stats);
+  }
   resetGame(true);
   G.stageIdx = stageIdx; applyEnv(stage().env);
   UI.title.hidden = true; UI.result.hidden = true; UI.pause.hidden = true; UI.hud.hidden = false;
   G.state = 'play'; input.clear();
-  // stage title card, then the first wave
-  showBanner(stage().name, stage().place); G.introT = 2.6;
-  UI.objective.textContent = '';   // the previous stage's boss objective would linger through the intro
+  if (bossOnly) {
+    showBanner(stage().boss.name, '決戦');
+    G.introT = 0.9;
+    UI.objective.textContent = stage().boss.name + 'を討て';
+  } else {
+    showBanner(stage().name, stage().place);
+    G.introT = 2.6;
+    UI.objective.textContent = '';
+  }
   if (statPoints() > 0) showStatSelection();
 }
 
@@ -2226,9 +2252,12 @@ function endGame(win) {
   const t = G.playTime;
   const score = G.ko * 100 + G.maxCombo * 40 + (win ? 20000 : 0) - Math.floor(t) * 10;
   const rank = !win ? '—' : score > 38000 ? 'S' : score > 32000 ? 'A' : score > 26000 ? 'B' : 'C';
-  const st = stage(), next = STAGES[G.stageIdx + 1];
-  const last = win && !next;
-  $('#result-title').textContent = last ? '全戦場制覇' : win ? `${st.name} 突破` : '力尽きた';
+  const bossOnly = G.mode === 'boss';
+  const st = stage(), next = bossOnly ? null : STAGES[G.stageIdx + 1];
+  const last = win && !next && !bossOnly;
+  $('#result-title').textContent = win
+    ? (bossOnly ? 'ボス討伐' : last ? '全戦場制覇' : st.name + ' 突破')
+    : '力尽きた';
   $('#result-sub').textContent = win ? `${st.boss.name}は鉄塊の前に倒れた` : `${st.name}・${waveDef()?.label ?? ''}で倒れた`;
   if (win && next && G.difficulty !== 'easy' && GROW_TEXT[G.stageIdx + 1]) $('#result-sub').textContent += `。${GROW_TEXT[G.stageIdx + 1]}`;
   $('#r-lv').textContent = hero.level;
@@ -2392,6 +2421,58 @@ function setupWeaponPicker() {
   $('.weapon-choice').hidden = false;
 }
 
+function setupBossBattle() {
+  const trigger = $('#btn-boss-mode');
+  const modal = $('#boss-setup');
+  const titleContent = $('.title-inner');
+  const level = $('#boss-level');
+  const list = $('#boss-options');
+  let selectedBoss = 0;
+  level.max = LEVEL_MAX;
+
+  const choices = STAGES.map(({ boss: opponent }, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = opponent.name;
+    button.addEventListener('click', () => {
+      selectedBoss = index;
+      choices.forEach((item, choice) => item.setAttribute('aria-pressed', String(choice === selectedBoss)));
+    });
+    button.setAttribute('aria-pressed', String(index === selectedBoss));
+    return button;
+  });
+  list.append(...choices);
+
+  function setOpen(open) {
+    modal.hidden = !open;
+    titleContent.inert = open;
+    trigger.setAttribute('aria-expanded', String(open));
+    if (open) choices[selectedBoss].focus();
+    else trigger.focus();
+  }
+  trigger.addEventListener('click', () => setOpen(true));
+  $('#btn-boss-close').addEventListener('click', () => setOpen(false));
+  modal.addEventListener('click', event => { if (event.target === modal) setOpen(false); });
+  modal.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
+    if (event.key === 'Tab') {
+      const first = choices[0], last = $('#btn-boss-close');
+      if (document.activeElement === (event.shiftKey ? first : last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    }
+  });
+  $('#btn-boss-start').addEventListener('click', () => {
+    const rank = Math.max(1, Math.min(LEVEL_MAX, Math.round(level.valueAsNumber || 1)));
+    level.value = rank;
+    const difficulty = $('input[name="boss-difficulty"]:checked').value;
+    setOpen(false);
+    startGame(selectedBoss, rank, 0, undefined, difficulty, 'boss');
+  });
+}
+
 async function boot() {
   try {
     await loadAll();
@@ -2413,6 +2494,7 @@ async function boot() {
     console.error(err); return;
   }
   setupWeaponPicker();
+  setupBossBattle();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
   window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth };
@@ -2426,7 +2508,7 @@ $('#btn-continue').addEventListener('click', () => {
   if (sv) startGame(sv.stage, sv.level, sv.exp || 0, sv.stats, difficulty);
 });
 // retry keeps the level reached on this battlefield
-$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp, hero.stats, G.difficulty));
+$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp, hero.stats, G.difficulty, G.mode));
 $('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp, hero.stats, G.difficulty));
 $('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; refreshContinue(); });
 $('#btn-pause').addEventListener('click', () => setPaused(true));
