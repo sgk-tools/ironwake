@@ -707,9 +707,7 @@ function startAction(name) {
   }
 }
 
-// light attack choice: running start -> thrust; during a combo the stick direction relative to
-// the hero picks a variation (back = rising launcher, side = diagonal cut); rage has its own chain
-// Each combo step has a pool of moves. Technique unlocks additional steps in the normal chain.
+// Neutral light chains have a pool of moves per step; awakening has its own chain.
 function comboChain() {
   const technique = hero.stats.technique;
   if (hero.rageT > 0) {
@@ -735,26 +733,101 @@ function readDir() {
   if (Math.abs(rel) > 2.3) return 'back';
   return rel < 0 ? 'right' : 'left';
 }
-// Moving when the combo starts = lunging thrust. During a combo: back = rising launcher, left/right =
-// diagonal cut toward that side; otherwise (no direction or forward) the random combo pools.
-// The direction is the one held when the attack was pressed (kept for buffered presses).
-function pickLight(prev, dir = readDir()) {
-  hero.aimNext = true;
-  if (!prev) { hero.comboIdx = 0; hero.lightCount = 1; return dir ? 'DASH' : pickFrom(comboChain()[0], null); }
-  hero.lightCount = (hero.lightCount || 0) + 1;
-  if (dir === 'back') return 'UPPER';
-  if (dir === 'left' || dir === 'right') return dir === 'left' ? 'CROSS' : 'CROSS2';
-  const chain = comboChain();
-  hero.comboIdx = (hero.comboIdx + 1) % chain.length;
-  return pickFrom(chain[hero.comboIdx], prev);
-}
-function startLight(prev, dir) {
-  startAction(pickLight(prev, dir));
-  hero.act.light = true;
+// Keep the facing at the start of a chain as the reference for buffered commands.
+const CUT_ANGLES = {
+  FWD: 0, L45: Math.PI / 4, L90: Math.PI / 2, L135: Math.PI * 3 / 4, BACK: Math.PI,
+  R45: -Math.PI / 4, R90: -Math.PI / 2, R135: -Math.PI * 3 / 4,
+};
+const DIRECTIONAL_CUTS = {
+  FWD: { open: 'DASH', light: ['RFLIP', 'L6', 'L5', 'STAB'], heavy: ['RFLIP', 'RLEAP'] },
+  L45: { open: 'HIGHCUT', light: ['VCUT', 'VAULT', 'DASH', 'L1B'], heavy: ['VAULT', 'FIN2'] },
+  R45: { open: 'HIGHCUT2', light: ['DOWNCUT', 'L6', 'STEP_CUT', 'L2B'], heavy: ['L6', 'L5'] },
+  L90: { open: 'CROSS', light: ['SPIN1', 'LOWSWEEP', 'L1', 'HIGHCUT'], heavy: ['L4', 'RSPIN2'] },
+  R90: { open: 'CROSS2', light: ['REVSPIN', 'LOWSWEEP2', 'L2', 'HIGHCUT2'], heavy: ['REVSPIN', 'RSPIN2'] },
+  L135: { open: 'L1B', light: ['LOWSWEEP', 'RISECUT', 'BACK_LEAP', 'CROSS'], heavy: ['BACK_LEAP', 'DRAG'] },
+  R135: { open: 'L2B', light: ['LOWSWEEP2', 'UPPER', 'RETREAT_SWEEP', 'CROSS2'], heavy: ['RETREAT_SWEEP', 'BACK_LEAP'] },
+  BACK: { open: 'UPPER', light: ['DOWNCUT', 'BACK_LEAP', 'BACKCUT', 'RISECUT'], heavy: ['FIN2', 'BACK_LEAP'] },
+};
+const RETREAT_CUTS = new Set(['BACKCUT', 'RETREAT_SWEEP', 'BACK_LEAP']);
+const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
+
+function readCutDirection(facing = hero.act?.cutFacing ?? hero.face) {
+  const [mx, my] = input.move();
+  if (Math.hypot(mx, my) < 0.3) return null;
+  return flowBucket(angLerp(facing, Math.atan2(-mx, my), 1) - facing);
 }
 
-// heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
-const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
+function reverseCut(previousDirection, direction) {
+  if (previousDirection === 'L90' && direction === 'R90') return 'XCUT_REV';
+  if (previousDirection === 'R90' && direction === 'L90') return 'XCUT';
+  return null;
+}
+
+function pickLight(prev, dir = readCutDirection()) {
+  if (!prev) {
+    hero.comboIdx = 0; hero.lightCount = 1;
+    return dir ? DIRECTIONAL_CUTS[dir].open : pickFrom(comboChain()[0], null);
+  }
+  hero.lightCount = (hero.lightCount || 0) + 1;
+  const chain = comboChain();
+  hero.comboIdx = (hero.comboIdx + 1) % chain.length;
+  if (!dir) return pickFrom(chain[hero.comboIdx], prev);
+
+  const previous = hero.act;
+  const reversal = reverseCut(previous?.cutDir, dir);
+  if (reversal) return reversal;
+  if (!previous?.cutDir && dir === 'FWD') return 'STEP_CUT';
+  if (!previous?.cutDir && dir === 'BACK') return 'BACKCUT';
+  const pool = DIRECTIONAL_CUTS[dir].light;
+  const step = previous?.cutDir === dir ? previous.cutStep : 0;
+  const name = pool[step % pool.length];
+  return name === prev ? pool[(step + 1) % pool.length] : name;
+}
+
+function startDirectedCut(name, dir, facing) {
+  if (dir) {
+    const retreat = RETREAT_CUTS.has(name);
+    hero.aimNext = false;
+    // Back commands keep the blade facing forward; diagonal retreat moves away from the cut.
+    const turn = dir === 'BACK' ? 0 : CUT_ANGLES[dir] - (retreat ? Math.PI : 0);
+    hero.face = facing + turn;
+  }
+  startAction(name);
+}
+
+function startLight(prev, dir = readCutDirection()) {
+  const previous = hero.act;
+  const facing = previous?.cutFacing ?? hero.face;
+  const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
+  const name = pickLight(prev, dir);
+  startDirectedCut(name, dir, facing);
+  hero.act.light = true;
+  hero.act.cutFacing = prev || dir ? facing : hero.face;
+  hero.act.cutDir = dir;
+  hero.act.cutStep = step;
+}
+
+function startFinisher(action) {
+  const h = hero;
+  const count = h.lightCount || 0;
+  if (count <= 0) { beginCharge(); startAction('CHARGE'); return; }
+
+  const dir = action.queuedHeavyDir || action.cutDir;
+  let name;
+  if (!dir) {
+    name = pickFrom(FINISHERS[Math.min(count, 5)], null);
+  } else {
+    const reversal = reverseCut(action.cutDir, dir);
+    const pool = DIRECTIONAL_CUTS[dir].heavy;
+    name = reversal || (!action.cutDir && dir === 'FWD' ? 'STEP_CUT'
+      : !action.cutDir && dir === 'BACK' ? 'RETREAT_SWEEP'
+      : pool[Number(count > 1)]);
+    if (name === action.name) name = pool.find(candidate => candidate !== action.name) || name;
+  }
+  startDirectedCut(name, dir, action.cutFacing ?? h.face);
+  h.lightCount = 0;
+}
+
 const STAT_MAX = 10;
 const STAT_KEYS = ['health', 'power', 'technique', 'dodge', 'awakening'];
 const LEVEL_MAX = 1 + STAT_KEYS.length * (STAT_MAX - 1);
@@ -881,7 +954,7 @@ function flowBucket(turn) {
 // returns true when a redirect started
 function tryFlow() {
   const h = hero, a = h.act;
-  if (!a || !a.def.type || NO_FLOW.has(a.name) || a.def.clashLocked) return false;
+  if (!a || !a.def.type || NO_FLOW.has(a.name) || a.def.clashLocked || a.queuedManual || a.queued === 'heavy') return false;
   // A redirect continues the same chain, including when it starts from a finisher.
   const count = a.light ? h.lightCount : 1;
   if (count >= lightLimit()) return false;
@@ -904,6 +977,9 @@ function tryFlow() {
   h.aimNext = false;
   startAction(name);
   h.act.light = true; h.act.flowed = true; h.act.bucket = bucket;
+  h.act.cutFacing = a.cutFacing ?? h.face;
+  h.act.cutDir = flowBucket(angLerp(h.act.cutFacing, ang, 1) - h.act.cutFacing);
+  h.act.cutStep = 0;
   // the blade is already moving: skip most of the wind-up
   if (!TURN_AXIS[name]) h.act.t = Math.min(0.07, h.act.def.active[0] * 0.6);
   h.faceTo = ang; h.flowAng = ang;
@@ -981,6 +1057,7 @@ function updateHero(dt) {
   const wantDodge = input.consume('dodge');
   const act = h.act;
   const sliding = finishingDodgeCut(act);
+  const cutDirection = attackPressed ? readCutDirection() : null;
   // boss fight: side/back + attack just before a boss strike = evade-cut (checked before everything else)
   const mk = !locked && !sliding && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
   if (mk) startMikiri(mk);
@@ -990,7 +1067,7 @@ function updateHero(dt) {
       if (direction) act.nextPattern = CLASH_PATTERNS[direction];
     }
   }
-  else if (!sliding && !wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
+  else if (!sliding && !wantDodge && !wantHeavy && !cutDirection && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
@@ -998,16 +1075,20 @@ function updateHero(dt) {
     // hurt, rolling or mid-attack), starts the charge; one charge per press
     if (wantHeavy || (input.held.has('heavy') && !h.heavyUsed)) { beginCharge(); startAction('CHARGE'); }
     else if (wantAttack) {
-      if (h.lightRecovery <= 0) startLight(null);
+      if (h.lightRecovery <= 0) startLight(null, cutDirection || readCutDirection());
       else input.pressed.add('attack');   // tapped during the short pause after a full chain: keep it, do not swallow it
     }
   } else if (!act.def.type) {
     // Keep attack presses through stagger and other passive states.
     if (wantAttack && act.name !== 'CHARGE' && act.name !== 'DODGE') input.pressed.add('attack');
   } else if (act.def.type) {
-    if (wantAttack) { act.queued = 'light'; act.queuedDir = readDir(); }
-    if (wantHeavy) act.queued = 'heavy';
-    if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) { act.queued = 'light'; act.queuedDir = readDir(); }
+    if (wantAttack && act.queued !== 'heavy') {
+      act.queued = 'light'; act.queuedDir = cutDirection; act.queuedManual = Boolean(cutDirection);
+    }
+    if (wantHeavy) { act.queued = 'heavy'; act.queuedHeavyDir = readCutDirection(); }
+    if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) {
+      act.queued = 'light'; act.queuedDir = readCutDirection();
+    }
   }
 
   const roll = h.act;
@@ -1084,10 +1165,7 @@ function updateHero(dt) {
     } else if (d.type && !finishingDodgeCut(a) && a.t >= d.chainAt && a.queued
       && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
       if (a.queued === 'heavy') {
-        // heavy mid-combo: a finisher that depends on how many light hits came before
-        const n = h.lightCount || 0;
-        if (n <= 0) { beginCharge(); startAction('CHARGE'); }
-        else { startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
+        startFinisher(a);
       } else {
         if (!a.light) h.lightCount = 0;
         startLight(a.name, a.queuedDir);

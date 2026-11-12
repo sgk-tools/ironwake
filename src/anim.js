@@ -608,3 +608,26 @@ HERO_ACTIONS.HIGHCUT2 = { ...HERO_ACTIONS.L1, dmg: 24, keys: withEnd(cut('HIGH_L
 HERO_ACTIONS.DOWNCUT = { ...HERO_ACTIONS.CROSS, dmg: 30, kb: 5, keys: withEnd(cut('TOP_DOWN'), 0.52) };
 HERO_ACTIONS.RISECUT = { ...HERO_ACTIONS.L1B, dmg: 26, up: 6, keys: withEnd(cut('RISE'), 0.52) };
 HERO_ACTIONS.LOWSWEEP2 = { ...HERO_ACTIONS.LOWSWEEP, keys: withEnd(cut('LOW_SWEEP_L2R'), 0.55) };
+
+// Directional chains: advancing cut, reverse cross, retreat sweep and a backward jump slam.
+HERO_ACTIONS.STEP_CUT = { ...HERO_ACTIONS.L1, dmg: 30, kb: 6, lunge: [0.02, 0.27, 9] };
+HERO_ACTIONS.XCUT_REV = {
+  ...HERO_ACTIONS.XCUT,
+  keys: withEnd([...cut('HIGH_L_LOW_R'), ...cut('HIGH_R_LOW_L', 0.27).slice(1)], 0.78),
+};
+HERO_ACTIONS.RETREAT_SWEEP = {
+  ...HERO_ACTIONS.L2, dmg: 32, kb: 7, up: 2.4, heavy: true, lunge: [0.015, 0.3, -9], sound: 'swingHeavy',
+};
+HERO_ACTIONS.BACK_LEAP = {
+  ...HERO_ACTIONS.RLEAP,
+  dur: 0.86, active: [0.41, 0.5], impact: 0.5, chainAt: 0.63,
+  dmg: 46, kb: 9, radius: 3.4, lunge: [0.045, 0.39, -8.5],
+  keys: [
+    [0, HERO.idle],
+    [0.09, { ...HERO_ACTIONS.RLEAP.keys[1][1], torso: [0.28, 0, 0], rootY: -0.32 }, 'out'],
+    [0.28, { ...HERO_ACTIONS.RLEAP.keys[2][1], torso: [-0.55, 0, 0], rootY: 1.42, rootPitch: -0.2 }, 'out'],
+    [0.39, { ...HERO_ACTIONS.RLEAP.keys[2][1], torso: [-0.1, 0, 0], rootY: 0.95 }, 'io'],
+    [0.5, HERO_ACTIONS.RLEAP.keys[3][1], 'in'],
+    [0.86, HERO.idle, 'io'],
+  ],
+};
