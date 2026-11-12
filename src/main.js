@@ -2007,6 +2007,65 @@ window.addEventListener('error', e => showBootError(e.message || 'error'));
 window.addEventListener('unhandledrejection', e => showBootError((e.reason && e.reason.message) || String(e.reason)));
 setTimeout(() => showBootError('60秒以内に起動しなかった'), 60000);
 
+function setupWeaponPicker() {
+  const select = $('#weapon-select');
+  const trigger = $('#weapon-btn');
+  const picker = $('#weapon-picker');
+  const titleContent = $('.title-inner');
+  const close = $('#weapon-picker-close');
+  for (const weapon of [...BUILTIN_WEAPONS, ...EXTRA_WEAPONS]) {
+    select.add(new Option(weapon.label, weapon.id));
+  }
+  const buttons = [...select.options].map(option => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = option.text;
+    button.addEventListener('click', () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event('change'));
+      setOpen(false);
+      sfx.unlock(); sfx.play('ui');
+    });
+    return button;
+  });
+  picker.querySelector('.weapon-options').append(...buttons);
+
+  function setOpen(open) {
+    picker.hidden = !open;
+    titleContent.inert = open;
+    trigger.setAttribute('aria-expanded', String(open));
+    if (open) (buttons[select.selectedIndex] || buttons[0]).focus();
+    else trigger.focus();
+  }
+
+  function showSelection() {
+    trigger.textContent = select.selectedOptions[0]?.text || select.options[0].text;
+    buttons.forEach((button, index) => button.setAttribute('aria-pressed', String(index === select.selectedIndex)));
+  }
+
+  trigger.addEventListener('click', () => setOpen(true));
+  close.addEventListener('click', () => setOpen(false));
+  picker.addEventListener('click', event => {
+    if (event.target === picker) setOpen(false);
+  });
+  picker.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+    } else if (event.key === 'Tab') {
+      const first = buttons[0];
+      if (document.activeElement === (event.shiftKey ? first : close)) {
+        event.preventDefault();
+        (event.shiftKey ? close : first).focus();
+      }
+    }
+  });
+  select.addEventListener('change', showSelection);
+  showSelection();
+  $('.weapon-choice').hidden = false;
+}
+
 async function boot() {
   try {
     await loadAll();
@@ -2027,17 +2086,7 @@ async function boot() {
     UI.loadText.textContent = `起動に失敗した（${err && err.message || err}）。この表示を伝えてほしい。`;
     console.error(err); return;
   }
-  { // weapon selector: standard sword plus any registered extras; hidden when there are none
-    const sel = $('#weapon-select');
-    for (const w of [...BUILTIN_WEAPONS, ...EXTRA_WEAPONS]) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.label; sel.appendChild(o); }
-    sel.value = 'standard'; $('.weapon-choice').hidden = false;
-    // tap the button to step to the next weapon (works where the native picker does not open)
-    const wbtn = $('#weapon-btn');
-    const showW = () => { wbtn.textContent = `${sel.options[sel.selectedIndex].textContent} ▸`; };
-    wbtn.addEventListener('click', () => { sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length; sel.dispatchEvent(new Event('change')); sfx.unlock(); sfx.play('ui'); });
-    sel.addEventListener('change', showW); showW();
-    // show the chosen weapon on the title-screen hero
-    sel.addEventListener('change', () => { const pick = hero.weapons[sel.value] || hero.weapons.standard; for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick; }); }
+  setupWeaponPicker();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
   window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth };
