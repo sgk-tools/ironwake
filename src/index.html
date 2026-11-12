@@ -218,8 +218,8 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
-    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（移動中は突進突き、連撃中に後ろで斬り上げ・横で袈裟斬り、回避中に押すと反撃） ／ <b>重</b>長押しで溜めて離すと回転斬り（溜めるほど威力と吹き飛びが増える）、連撃の途中で押すと段数に応じた締めの技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 横か後ろへ倒して<b>斬</b>で見切り斬り</div>
-    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（移動中は突進突き、後ろで斬り上げ・横で袈裟斬り、回避中は反撃） ／ <b>K</b> 長押しで溜め回転斬り・連撃中は締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 横か後ろ＋<b>J</b> で見切り斬り</div>
+    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（移動中は突進突き、連撃中に後ろで斬り上げ・横で袈裟斬り、回避中に押すと方向に応じて反撃） ／ <b>重</b>長押しで溜めて離すと回転斬り（回避中から溜められ、長く溜めると威力と吹き飛びが増える）、連撃の途中で押すと段数に応じた締めの技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 横か後ろへ倒して<b>斬</b>で見切り斬り</div>
+    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（移動中は突進突き、後ろで斬り上げ・横で袈裟斬り、回避中は方向に応じて反撃） ／ <b>K</b> 長押しで溜め回転斬り（回避中から溜め可）・連撃中は締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 横か後ろ＋<b>J</b> で見切り斬り</div>
   </div>
   <div id="weapon-picker" class="overlay" role="dialog" aria-modal="true" aria-labelledby="weapon-picker-title" hidden>
     <div class="panel">
@@ -274,7 +274,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button class="stat-option" data-stat="health"><strong>体力</strong><span class="stat-rank"></span><span class="stat-effect">最大体力が増える</span></button>
       <button class="stat-option" data-stat="power"><strong>攻撃力</strong><span class="stat-rank"></span><span class="stat-effect">ダメージと吹き飛ばしが強くなる</span></button>
       <button class="stat-option" data-stat="technique"><strong>技術</strong><span class="stat-rank"></span><span class="stat-effect">斬を長押ししたときの連撃数が増える</span></button>
-      <button class="stat-option" data-stat="dodge"><strong>回避</strong><span class="stat-rank"></span><span class="stat-effect">回避の無敵が早く始まる</span></button>
+      <button class="stat-option" data-stat="dodge"><strong>回避</strong><span class="stat-rank"></span><span class="stat-effect">回避の無敵時間が延びる</span></button>
     </div>
   </div>
 </div>

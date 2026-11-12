@@ -762,7 +762,8 @@ const STAT_BUTTONS = [...UI.statSelect.querySelectorAll('[data-stat]')];
 const HEALTH_PER_RANK = 90;
 const POWER_PER_RANK = 0.15;
 const LIGHT_RECOVERY = 0.22;
-const DODGE_START = [0.12, 0.09, 0.06, 0.03, 0];
+const DODGE_IFRAMES = [0.24, 0.27, 0.30, 0.33, HERO_ACTIONS.DODGE.iframes[1]];
+const DODGE_CUT = { fwd: 'DASH', back: 'UPPER', left: 'CROSS', right: 'CROSS2' };
 
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + POWER_PER_RANK * (hero.stats.power - 1);
@@ -895,6 +896,43 @@ function tryFlow() {
   return true;
 }
 
+function startDodgeCut(roll) {
+  const h = hero;
+  const name = DODGE_CUT[readDir()] || 'L1';
+  const rollFacing = h.face;
+  const [mx, my] = input.move();
+  if (Math.hypot(mx, my) > 0.3) h.face = Math.atan2(-mx, my);
+  h.aimNext = false;
+  startAction(name);
+  h.lightCount = 1; h.comboIdx = 0; h.act.light = true;
+  h.act.dodgeInvuln = Math.max(0, DODGE_IFRAMES[h.stats.dodge - 1] - roll.t);
+  h.act.dodgeSlide = Math.max(0, roll.def.lunge[1] - roll.t);
+  h.act.dodgeFacing = rollFacing;
+}
+
+function beginCharge() {
+  hero.charge = 0; hero.chargeLv = 0; hero.heavyUsed = true;
+}
+
+function advanceCharge(dt) {
+  const h = hero;
+  h.charge += dt;
+  const lv = h.charge >= 2.0 ? 3 : h.charge >= 1.2 ? 2 : h.charge >= 0.5 ? 1 : 0;
+  if (lv > h.chargeLv) {
+    h.chargeLv = lv; sfx.play('clang', 0.5 + lv * 0.2); fx.ring(h.x, h.z, 1.2 + lv * 0.7, 0xffd080, 0.4);
+  }
+  if (h.chargeLv > 0 && Math.random() < 0.3 * h.chargeLv) fx.ember(h.x, 0.1, h.z);
+  h.mat.emissive.setRGB(0.04 * h.chargeLv * (0.7 + 0.3 * Math.sin(G.time * 30)), 0.012 * h.chargeLv, 0);
+}
+
+function releaseCharge() {
+  const h = hero;
+  h.spinTarget = 1;   // one full turn; charge level raises damage and knockback instead
+  h.chargeMul = 1 + 0.25 * h.chargeLv; h.spinLoops = 0;
+  if (h.rageT <= 0) h.mat.emissive.setRGB(0, 0, 0);
+  startAction('SPIN_IN');
+}
+
 function updateHero(dt) {
   const h = hero;
   if (h.dead) {
@@ -918,37 +956,48 @@ function updateHero(dt) {
   if (input.consume('rage') && !locked && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
     h.rage = 0; h.rageT = 12; startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
-  const wantAttack = input.consume('attack') || (input.held.has('attack') && !h.act);
+  const attackPressed = input.consume('attack');
+  const wantAttack = attackPressed || (input.held.has('attack') && !h.act);
   if (wantAttack) h.lastAtkT = G.time;
   const wantHeavy = input.consume('heavy');
   if (wantHeavy) h.heavyUsed = false;
   if (!input.held.has('heavy') && !wantHeavy) h.heavyUsed = true;   // released: nothing left to carry over
   const wantDodge = input.consume('dodge');
   const act = h.act;
+  const sliding = act?.dodgeSlide > 0;
   // boss fight: side/back + attack just before a boss strike = evade-cut (checked before everything else)
-  const mk = !locked && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
+  const mk = !locked && !sliding && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
   if (mk) startMikiri(mk);
   else if (locked) { /* ignore input */ }
-  else if (!wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
-  else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
+  else if (!sliding && !wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
+  else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge === STAT_MAX || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
     // heavy: a press, or the button still held from a press that could not be used yet (made while
     // hurt, rolling or mid-attack), starts the charge; one charge per press
-    if (wantHeavy || (input.held.has('heavy') && !h.heavyUsed)) { h.charge = 0; h.chargeLv = 0; h.heavyUsed = true; startAction('CHARGE'); }
+    if (wantHeavy || (input.held.has('heavy') && !h.heavyUsed)) { beginCharge(); startAction('CHARGE'); }
     else if (wantAttack) {
       if (h.lightRecovery <= 0) startLight(null);
       else input.pressed.add('attack');   // tapped during the short pause after a full chain: keep it, do not swallow it
     }
-  } else if (act.name === 'DODGE') {
-    if (wantAttack) act.queued = 'counter';  // attack during a roll: turning counter-cut on recovery
   } else if (!act.def.type) {
-    // hurt (or any other state that takes no orders): hold on to the presses until it ends
-    if (wantAttack && act.name !== 'CHARGE') input.pressed.add('attack');
+    // Keep attack presses through stagger and other passive states.
+    if (wantAttack && act.name !== 'CHARGE' && act.name !== 'DODGE') input.pressed.add('attack');
   } else if (act.def.type) {
     if (wantAttack) { act.queued = 'light'; act.queuedDir = readDir(); }
     if (wantHeavy) act.queued = 'heavy';
     if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) { act.queued = 'light'; act.queuedDir = readDir(); }
+  }
+
+  const roll = h.act;
+  if (roll?.name === 'DODGE') {
+    if (!roll.charging && (wantHeavy || (input.held.has('heavy') && !h.heavyUsed))) {
+      beginCharge();
+      roll.charging = true;
+      // The press can be consumed in the same frame that the button was released.
+      roll.chargeReleased = !input.held.has('heavy');
+    }
+    if (!roll.charging && attackPressed) startDodgeCut(roll);
   }
 
   // action progression
@@ -961,6 +1010,7 @@ function updateHero(dt) {
     const a = h.act, d = a.def;
     turnAxis = TURN_AXIS[a.name];
     a.t += dt * (d.type ? speedK : 1);
+    if (a.dodgeInvuln > 0) a.dodgeInvuln -= dt;
     sampleKeys(d.keys, a.t, h.target);
     if (d.mikiri) mikiriMove(a);
     if (a.flowed && h.faceTo != null) {
@@ -969,7 +1019,12 @@ function updateHero(dt) {
       if (a.t < 0.22) { h.x += Math.sin(h.faceTo) * 3.2 * dt; h.z += Math.cos(h.faceTo) * 3.2 * dt; }
     }
     if (d.clash) clashStep(a);
-    if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
+    if (a.dodgeSlide > 0) {
+      const distance = Math.min(dt, a.dodgeSlide) * HERO_ACTIONS.DODGE.lunge[2];
+      h.x += Math.sin(a.dodgeFacing) * distance;
+      h.z += Math.cos(a.dodgeFacing) * distance;
+      a.dodgeSlide -= dt;
+    } else if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
       // a redirected cut lunges where the stick points, not where the body is still turning from
       const la = a.flowed && h.faceTo != null ? h.faceTo : h.face;
@@ -984,40 +1039,33 @@ function updateHero(dt) {
     }
     if (holdingTurn || beginTurnHold) {
       // Retain the final turn pose before allowing recovery or a queued attack.
+    } else if (a.name === 'DODGE' && a.charging) {
+      a.chargeReleased ||= !input.held.has('heavy');
+      if (!a.chargeReleased) advanceCharge(dt);
+      if (a.t >= d.dur) {
+        h.heavyUsed = true;
+        if (a.chargeReleased) releaseCharge();
+        else startAction('CHARGE');
+      }
     } else if (a.name === 'CHARGE') {
-      // Charge, rage and level set the number of complete revolutions on release.
-      h.charge += dt;
-      const lv = h.charge >= 2.0 ? 3 : h.charge >= 1.2 ? 2 : h.charge >= 0.5 ? 1 : 0;
-      if (lv > h.chargeLv) {
-        h.chargeLv = lv; sfx.play('clang', 0.5 + lv * 0.2); fx.ring(h.x, h.z, 1.2 + lv * 0.7, lv === 3 ? 0xff4020 : 0xffb070, 0.4);
-        fx.spark(h.tip.x, h.tip.y, h.tip.z, 6 + lv * 4);
-      }
-      if (h.chargeLv > 0 && Math.random() < 0.3 * h.chargeLv) fx.ember(h.x, 0.1, h.z);
-      h.mat.emissive.setRGB(0.04 * h.chargeLv * (0.7 + 0.3 * Math.sin(G.time * 30)), 0.012 * h.chargeLv, 0);
-      if (!input.held.has('heavy') || h.charge > 3.5) {
-        h.spinTarget = 1;   // one full turn; charge level raises damage and knockback instead
-        h.chargeMul = 1 + 0.25 * h.chargeLv; h.spinLoops = 0;
-        if (h.rageT <= 0) h.mat.emissive.setRGB(0, 0, 0);
-        startAction('SPIN_IN');
-      }
+      advanceCharge(dt);
+      if (!input.held.has('heavy') || h.charge > 3.5) releaseCharge();
     } else if (a.name === 'SPIN_IN' && a.t >= d.dur) startAction('SPIN_LOOP');
     else if (a.name === 'SPIN_LOOP' && a.t >= d.dur) {
       h.pose.rootYaw = h.target.rootYaw = 0;
       h.spinLoops++;
       startAction(h.spinLoops < (h.spinTarget || 1) ? 'SPIN_LOOP' : 'SPIN_OUT');
-    } else if (d.type && a.t >= d.chainAt && a.queued
+    } else if (d.type && !(a.dodgeSlide > 0) && a.t >= d.chainAt && a.queued
       && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
       if (a.queued === 'heavy') {
         // heavy mid-combo: a finisher that depends on how many light hits came before
         const n = h.lightCount || 0;
-        if (n <= 0) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
+        if (n <= 0) { beginCharge(); startAction('CHARGE'); }
         else { startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
       } else {
         if (!a.light) h.lightCount = 0;
         startLight(a.name, a.queuedDir);
       }
-    } else if (a.t >= d.dur && a.queued === 'counter') {
-      h.lightCount = 1; h.comboIdx = 0; startAction('L4'); h.act.light = true;
     } else if (a.t >= d.dur) {
       if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
       h.act = null;
@@ -1203,7 +1251,7 @@ function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;
   const a = h.act;
-  if (a?.name === 'DODGE' && a.t >= DODGE_START[h.stats.dodge - 1] && a.t <= a.def.iframes[1]) return;
+  if (a?.dodgeInvuln > 0 || (a?.name === 'DODGE' && a.t < DODGE_IFRAMES[h.stats.dodge - 1])) return;
   // spinning attacks are invulnerable (charged spin and the spins inside combos)
   if (h.act && SPIN_MOVES.has(h.act.name)) return;
   h.hp -= dmg * (h.rageT > 0 ? 0.6 : 1);
@@ -1218,7 +1266,7 @@ function hurtHero(dmg, fromX, fromZ) {
     return;
   }
   // charging the spin has super armour: damage is taken but the wind-up keeps going
-  if (h.act && h.act.name === 'CHARGE') { G.shake = Math.max(G.shake, 0.25); return; }
+  if (a?.name === 'CHARGE' || (a?.name === 'DODGE' && a.charging)) { G.shake = Math.max(G.shake, 0.25); return; }
   if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) startAction('HURT');
 }
 

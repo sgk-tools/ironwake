@@ -174,12 +174,15 @@ async function run() {
           g.hurtHero(10, h.x, h.z);
           return h.hp < h.maxHp;
         };
-        return [canTakeDamage(0), canTakeDamage(0.07), canTakeDamage(0.13), canTakeDamage(0.4)];
+        return [0, 0.25, 0.28, 0.31, 0.34, 0.37].map(canTakeDamage);
       });
     });
     assert.deepEqual(dodge, [
-      [true, true, false, true], [true, true, false, true], [true, false, false, true],
-      [true, false, false, true], [false, false, false, true],
+      [false, true, true, true, true, true],
+      [false, false, true, true, true, true],
+      [false, false, false, true, true, true],
+      [false, false, false, false, true, true],
+      [false, false, false, false, false, true],
     ]);
     const cancels = await page.evaluate(() => new Promise(resolve => {
       const g = window.__game;
@@ -189,7 +192,69 @@ async function run() {
       requestAnimationFrame(() => resolve(g.hero().act?.name));
     }));
     assert.equal(cancels, 'DODGE');
-    console.log('Dodge windows, rank 5 immediate invulnerability and attack cancel passed');
+    console.log('Immediate dodge invulnerability at all ranks and rank 5 attack cancel passed');
+
+    const counters = [];
+    for (const key of [null, 'KeyW', 'KeyS', 'KeyA', 'KeyD']) {
+      counters.push(await page.evaluate(key => new Promise(resolve => {
+        const g = window.__game;
+        g.input.keys.clear();
+        g.input.held.clear();
+        g.startGame();
+        const h = g.hero();
+        g.startAction('DODGE');
+        if (key) g.input.keys.add(key);
+        const attack = document.querySelector('#btn-attack');
+        attack.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, pointerType: 'touch' }));
+        requestAnimationFrame(() => {
+          attack.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, pointerType: 'touch' }));
+          g.hurtHero(50, h.x, h.z);
+          resolve({ action: h.act?.name, sliding: h.z > 0 && Math.abs(h.x) < 0.001, hp: h.hp });
+        });
+      }), key));
+    }
+    assert.deepEqual(counters.map(test => test.action), ['L1', 'DASH', 'UPPER', 'CROSS', 'CROSS2']);
+    assert.ok(counters.every(test => test.sliding && test.hp === 1000));
+    console.log('Five directional dodge attacks continue roll movement and retain invulnerability');
+
+    for (const releaseDuringDodge of [false, true]) {
+      const heavy = await page.evaluate(early => new Promise(resolve => {
+        const g = window.__game;
+        g.input.keys.clear();
+        g.input.held.clear();
+        g.startGame();
+        g.G.substeps = 1;
+        const dodgeButton = document.querySelector('#btn-dodge');
+        const heavyButton = document.querySelector('#btn-heavy');
+        const tapEvent = (type, pointerId) => new PointerEvent(type, { pointerId, pointerType: 'touch' });
+        dodgeButton.dispatchEvent(tapEvent('pointerdown', 2));
+        heavyButton.dispatchEvent(tapEvent('pointerdown', 3));
+        dodgeButton.dispatchEvent(tapEvent('pointerup', 2));
+        const releaseHeavy = () => heavyButton.dispatchEvent(tapEvent('pointerup', 3));
+        const h = g.hero();
+        let chargedWhileRolling = false;
+        let chargeAfterRoll = false;
+        const end = performance.now() + 6000;
+        const tick = () => {
+          if (h.act?.name === 'DODGE' && h.charge >= 0.15) {
+            chargedWhileRolling = true;
+            if (early) releaseHeavy();
+          }
+          if (h.act?.name === 'CHARGE' && h.charge >= 0.55) {
+            chargeAfterRoll = true;
+            releaseHeavy();
+          }
+          if (h.act?.name === 'SPIN_IN' || performance.now() >= end) {
+            g.input.held.clear();
+            resolve({ chargedWhileRolling, chargeAfterRoll, spin: h.act?.name === 'SPIN_IN', power: h.chargeMul });
+          } else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }), releaseDuringDodge);
+      assert.deepEqual(heavy, { chargedWhileRolling: true, chargeAfterRoll: !releaseDuringDodge,
+        spin: true, power: releaseDuringDodge ? 1 : 1.25 });
+    }
+    console.log('Heavy starts charging during the roll and releases correctly before or after recovery');
 
     const strikes = [];
     for (const power of [1, 5]) {
