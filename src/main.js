@@ -539,7 +539,12 @@ function dotCanvas() {
 const input = new Input($('#stick-zone'), { attack: $('#btn-attack'), heavy: $('#btn-heavy'), dodge: $('#btn-dodge'), rage: $('#btn-rage') });
 const sfx = new Sfx();
 let fx, crowd, hero, boss;
-const G = { substeps: 1, stageIdx: 0, introT: 0, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
+const DIFFICULTIES = {
+  easy: { hp: 1, damage: 1, speed: 1 },
+  normal: { hp: 1, damage: 1, speed: 1 },
+  hard: { hp: 1.35, damage: 1.4, speed: 1.15 },
+};
+const G = { substeps: 1, stageIdx: 0, difficulty: 'normal', introT: 0, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
 
 // Each stage: its waves (mix = spawn weights per enemy type), its boss and its lighting.
 const STAGES = [
@@ -1622,11 +1627,13 @@ function spawnEnemy(type) {
   let x = hero.x + Math.cos(a) * d, z = hero.z + Math.sin(a) * d;
   const r = Math.hypot(x, z); if (r > ARENA - 1) { x *= (ARENA - 1) / r; z *= (ARENA - 1) / r; }
   const def = ENEMY[type];
-  enemies.push({ type, x, z, y: 0, vx: 0, vz: 0, vy: 0, face: Math.atan2(hero.x - x, hero.z - z), hp: def.hp, state: 'walk', t: 0, cd: 1 + Math.random() * 2, phase: Math.random() * 6, dead: false, lastHit: -1, pose: {}, spin: 0, slot: Math.random() * Math.PI * 2 });
+  const hp = Math.round(def.hp * DIFFICULTIES[G.difficulty].hp);
+  enemies.push({ type, x, z, y: 0, vx: 0, vz: 0, vy: 0, face: Math.atan2(hero.x - x, hero.z - z), hp, state: 'walk', t: 0, cd: 1 + Math.random() * 2, phase: Math.random() * 6, dead: false, lastHit: -1, pose: {}, spin: 0, slot: Math.random() * Math.PI * 2 });
 }
 
 const _rootM = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _eu = new THREE.Euler();
 function updateEnemies(dt) {
+  const rules = DIFFICULTIES[G.difficulty];
   let attackers = 0;
   for (const e of enemies) if (!e.dead && (e.state === 'windup' || e.state === 'strike')) attackers++;
   crowd.begin();
@@ -1653,7 +1660,7 @@ function updateEnemies(dt) {
           let tx = dx, tz = dz;
           if (dist < want + 0.4 && attackers >= 5) { const s = Math.sign(Math.sin(e.slot)) || 1; tx = -dz * s; tz = dx * s; }
           const tl = Math.hypot(tx, tz) || 1;
-          const sp = dist > want ? def.speed : (attackers >= 5 ? def.speed * 0.35 : 0);
+          const sp = (dist > want ? def.speed : (attackers >= 5 ? def.speed * 0.35 : 0)) * rules.speed;
           e.x += tx / tl * sp * dt; e.z += tz / tl * sp * dt;
           e.face = angLerp(e.face, Math.atan2(dx, dz), Math.min(1, dt * 6));
           e.phase += dt * (sp > 0.1 ? 8 * (def.speed / 3) : 2);
@@ -1670,7 +1677,7 @@ function updateEnemies(dt) {
           if (!e.struck && e.t > 0.06) {
             e.struck = true;
             const ang = Math.abs(angLerp(e.face, Math.atan2(dx, dz), 1) - e.face);
-            if (dist < def.range + 0.35 && ang < 1.0) hurtHero(def.dmg, e.x, e.z);
+            if (dist < def.range + 0.35 && ang < 1.0) hurtHero(def.dmg * rules.damage, e.x, e.z);
           }
           if (e.t > 0.55) { e.state = 'walk'; e.t = 0; e.cd = 1.2 + Math.random() * 2.2; }
           break;
@@ -1962,7 +1969,10 @@ function nextWave() {
   if (w.boss) {
     boss = boss || makeBoss();
     const bc = stage().boss;
-    boss.maxHp = boss.hp = bc.hp; boss.speed = bc.speed; boss.dmgMul = bc.dmg; boss.enrageOn = bc.enrage; boss.enraged = false;
+    const rules = DIFFICULTIES[G.difficulty];
+    boss.maxHp = boss.hp = Math.round(bc.hp * rules.hp);
+    boss.speed = bc.speed * rules.speed; boss.dmgMul = bc.dmg * rules.damage;
+    boss.enrageOn = bc.enrage; boss.enraged = false;
     boss.dead = false; boss.poise = 0; boss.mat.color.setRGB(...bc.tint).multiplyScalar(2.0); boss.mat.emissive.setRGB(...(bc.glow || [0, 0, 0]));
     boss.scale = bc.scale || 2.3; boss.rig.root.scale.setScalar(boss.scale); boss.y = 0; boss.tele = false;
     boss.attacks = new Set(bc.attacks || ['cleave', 'slam', 'charge']);
@@ -2073,12 +2083,20 @@ function applyEnv(env) {
   scene.environmentIntensity = env.envI;
 }
 
-// progress (stage reached, level) kept per viewer; the game works without it
+// Keep the original save for NORMAL and one separate checkpoint for each other mode.
 const SAVE_KEY = 'ironwake-save-v1';
-function loadSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { return null; } }
-function writeSave(d) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) { /* storage unavailable */ } }
+const selectedDifficulty = () => $('input[name="difficulty"]:checked').value;
+const saveKey = difficulty => difficulty === 'normal' ? SAVE_KEY : SAVE_KEY + '-' + difficulty;
+function loadSave(difficulty) {
+  try { return JSON.parse(localStorage.getItem(saveKey(difficulty)) || 'null'); } catch (e) { return null; }
+}
+function writeSave(data) {
+  try {
+    localStorage.setItem(saveKey(G.difficulty), JSON.stringify({ ...data, difficulty: G.difficulty }));
+  } catch (e) { /* storage unavailable */ }
+}
 function refreshContinue() {
-  const sv = loadSave(), btn = $('#btn-continue');
+  const sv = loadSave(selectedDifficulty()), btn = $('#btn-continue');
   if (sv && STAGES[sv.stage]) { btn.hidden = false; btn.textContent = `続きから（${STAGES[sv.stage].name}・Lv${sv.level}）`; }
   else btn.hidden = true;
 }
@@ -2099,17 +2117,19 @@ function resetGame(keepLevel = false) {
   for (const k in hudCache) delete hudCache[k];
 }
 
-function startGame(stageIdx = 0, level = 1, exp = 0, stats) {
+function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal') {
+  G.difficulty = difficulty === 'easy' || difficulty === 'hard' ? difficulty : 'normal';
+  const maxed = G.difficulty === 'easy';
   const pick = hero.weapons[$('#weapon-select').value] || hero.weapons.standard;
   for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick;
   hero.sword = pick.mesh;
   hero.blade = pick.blade;
   // the weapon grows more sinister with every stage already cleared
-  hero.weapon = pick; hero.growTier = applyGrowth(pick, Math.min(GROW_MAX, stageIdx));
+  hero.weapon = pick; hero.growTier = applyGrowth(pick, maxed ? GROW_MAX : Math.min(GROW_MAX, stageIdx));
   sfx.unlock(); sfx.play('ui'); sfx.startMusic();
-  hero.level = Number.isInteger(level) ? Math.min(LEVEL_MAX, Math.max(1, level)) : 1;
-  hero.exp = exp;
-  hero.stats = loadStats(stats);
+  hero.level = maxed ? LEVEL_MAX : Number.isInteger(level) ? Math.min(LEVEL_MAX, Math.max(1, level)) : 1;
+  hero.exp = maxed ? 0 : exp;
+  hero.stats = maxed ? Object.fromEntries(STAT_KEYS.map(key => [key, STAT_MAX])) : loadStats(stats);
   resetGame(true);
   G.stageIdx = stageIdx; applyEnv(stage().env);
   UI.title.hidden = true; UI.result.hidden = true; UI.pause.hidden = true; UI.hud.hidden = false;
@@ -2132,7 +2152,7 @@ function endGame(win) {
   const last = win && !next;
   $('#result-title').textContent = last ? '全戦場制覇' : win ? `${st.name} 突破` : '力尽きた';
   $('#result-sub').textContent = win ? `${st.boss.name}は鉄塊の前に倒れた` : `${st.name}・${waveDef()?.label ?? ''}で倒れた`;
-  if (win && next && GROW_TEXT[G.stageIdx + 1]) $('#result-sub').textContent += `。${GROW_TEXT[G.stageIdx + 1]}`;
+  if (win && next && G.difficulty !== 'easy' && GROW_TEXT[G.stageIdx + 1]) $('#result-sub').textContent += `。${GROW_TEXT[G.stageIdx + 1]}`;
   $('#r-lv').textContent = hero.level;
   const nb = $('#btn-next');
   nb.hidden = !win || !next;
@@ -2319,11 +2339,16 @@ async function boot() {
   window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth };
 }
 
-UI.start.addEventListener('click', () => startGame(0, 1, 0));
-$('#btn-continue').addEventListener('click', () => { const sv = loadSave(); if (sv) startGame(sv.stage, sv.level, sv.exp || 0, sv.stats); });
+$('.difficulty-choice').addEventListener('change', refreshContinue);
+UI.start.addEventListener('click', () => startGame(0, 1, 0, undefined, selectedDifficulty()));
+$('#btn-continue').addEventListener('click', () => {
+  const difficulty = selectedDifficulty();
+  const sv = loadSave(difficulty);
+  if (sv) startGame(sv.stage, sv.level, sv.exp || 0, sv.stats, difficulty);
+});
 // retry keeps the level reached on this battlefield
-$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp, hero.stats));
-$('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp, hero.stats));
+$('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp, hero.stats, G.difficulty));
+$('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp, hero.stats, G.difficulty));
 $('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; refreshContinue(); });
 $('#btn-pause').addEventListener('click', () => setPaused(true));
 $('#btn-resume').addEventListener('click', () => setPaused(false));
