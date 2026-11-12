@@ -1,9 +1,12 @@
 // Touch (virtual stick + buttons) and keyboard input.
+const KEYMAP = { KeyJ: 'attack', KeyK: 'heavy', Space: 'dodge', KeyL: 'dodge', KeyU: 'rage', KeyI: 'rage', KeyP: 'pause', Escape: 'pause' };
+
 export class Input {
   constructor(stickZone, buttons) {
     this.mx = 0; this.my = 0;           // move vector, screen space (x right, y up), |v| <= 1
     this.pressed = new Set();           // edge-triggered actions consumed by the game
     this.held = new Set();
+    this.buttonPointers = new Map();
     this.stickId = null;
     this.zone = stickZone;
     this.base = stickZone.querySelector('.stick-base');
@@ -16,18 +19,27 @@ export class Input {
     window.addEventListener('pointerup', e => this.stickEnd(e));
     window.addEventListener('pointercancel', e => this.stickEnd(e));
 
+    const releasePointer = e => {
+      const button = this.buttonPointers.get(e.pointerId);
+      if (!button) return;
+      this.buttonPointers.delete(e.pointerId);
+      if (!this.touchHeld(button.action)) button.el.classList.remove('down');
+      this.release(button.action);
+    };
     for (const [action, el] of Object.entries(buttons)) {
       el.addEventListener('pointerdown', e => {
         e.preventDefault();
-        try { el.setPointerCapture?.(e.pointerId); } catch (err) { /* no active pointer (synthetic events) */ }
+        this.buttonPointers.set(e.pointerId, { action, el });
+        try { el.setPointerCapture?.(e.pointerId); } catch (err) { /* window handles uncaptured pointers */ }
         this.press(action); el.classList.add('down');
       });
-      const up = () => { this.held.delete(action); el.classList.remove('down'); };
-      el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('lostpointercapture', up);
+      el.addEventListener('pointerup', releasePointer);
+      el.addEventListener('pointercancel', releasePointer);
       el.addEventListener('contextmenu', e => e.preventDefault());
     }
+    window.addEventListener('pointerup', releasePointer);
+    window.addEventListener('pointercancel', releasePointer);
 
-    const KEYMAP = { KeyJ: 'attack', KeyK: 'heavy', Space: 'dodge', KeyL: 'dodge', KeyU: 'rage', KeyI: 'rage', KeyP: 'pause', Escape: 'pause' };
     window.addEventListener('keydown', e => {
       if (e.repeat) return;
       this.keys.add(e.code);
@@ -36,9 +48,11 @@ export class Input {
     });
     window.addEventListener('keyup', e => {
       this.keys.delete(e.code);
-      const a = KEYMAP[e.code]; if (a) this.held.delete(a);
+      const a = KEYMAP[e.code]; if (a) this.release(a);
     });
-    window.addEventListener('blur', () => { this.keys.clear(); this.held.clear(); this.resetStick(); });
+    window.addEventListener('blur', () => {
+      this.keys.clear(); this.clear(); this.resetButtons(); this.resetStick();
+    });
     // iOS: block pinch-zoom / double-tap zoom gestures on the game surface
     document.addEventListener('gesturestart', e => e.preventDefault());
     document.addEventListener('dblclick', e => e.preventDefault());
@@ -46,6 +60,17 @@ export class Input {
   press(a) { this.pressed.add(a); this.held.add(a); }
   consume(a) { if (this.pressed.has(a)) { this.pressed.delete(a); return true; } return false; }
   clear() { this.pressed.clear(); }
+  touchHeld(action) {
+    return [...this.buttonPointers.values()].some(button => button.action === action);
+  }
+  release(action) {
+    if (!this.touchHeld(action) && ![...this.keys].some(code => KEYMAP[code] === action)) this.held.delete(action);
+  }
+  resetButtons() {
+    for (const { el } of this.buttonPointers.values()) el.classList.remove('down');
+    this.buttonPointers.clear();
+    this.held.clear();
+  }
   stickStart(e) {
     if (this.stickId !== null) return;
     e.preventDefault();

@@ -663,7 +663,7 @@ function makeHero() {
     rage: 0, rageT: 0, act: null, queued: null, iframe: 0, phase: 0, speedAmt: 0, pose: {}, target: {},
     lastBase: new THREE.Vector3(), lastTip: new THREE.Vector3(), base: new THREE.Vector3(), tip: new THREE.Vector3(),
     attackId: 0, dead: false, level: 1, exp: 0, stats: loadStats(),
-    comboIdx: 0, lightCount: 0, lightRecovery: 0, spinLoops: 0,
+    comboIdx: 0, lightCount: 0, lightRecovery: 0, neutralChain: 0, spinLoops: 0, pendingActions: {},
   };
 }
 
@@ -771,12 +771,25 @@ function reverseCut(previousDirection, direction) {
 function pickLight(prev, dir = readCutDirection()) {
   if (!prev) {
     hero.comboIdx = 0; hero.lightCount = 1;
+    if (!dir) hero.neutralChain++;
     return dir ? DIRECTIONAL_CUTS[dir].open : pickFrom(comboChain()[0], null);
   }
   hero.lightCount = (hero.lightCount || 0) + 1;
   const chain = comboChain();
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
-  if (!dir) return pickFrom(chain[hero.comboIdx], prev);
+  if (!dir) {
+    const step = (hero.lightCount - 1) % 6;
+    const alternate = (hero.neutralChain + Math.floor((hero.lightCount - 1) / 6)) % 2;
+    if (step === 1) {
+      const spin = alternate ? 'SPIN1' : 'REVSPIN';
+      return spin === prev ? (spin === 'SPIN1' ? 'REVSPIN' : 'SPIN1') : spin;
+    }
+    if (step === 2) {
+      const flip = alternate ? 'RFLIP' : 'WHEEL';
+      return flip === prev ? (flip === 'RFLIP' ? 'WHEEL' : 'RFLIP') : flip;
+    }
+    return pickFrom(chain[hero.comboIdx], prev);
+  }
 
   const previous = hero.act;
   const reversal = reverseCut(previous?.cutDir, dir);
@@ -901,7 +914,8 @@ function showStatSelection() {
   if (!UI.statSelect.contains(document.activeElement) || document.activeElement.disabled) {
     STAT_BUTTONS.find(button => !button.disabled)?.focus();
   }
-  input.clear(); input.held.clear(); input.keys.clear(); input.resetStick();
+  input.clear(); input.resetButtons(); input.keys.clear(); input.resetStick();
+  hero.pendingActions = {};
 }
 
 function chooseStat(key) {
@@ -1007,6 +1021,7 @@ function startDodgeCut(roll) {
 }
 
 function beginCharge() {
+  delete hero.pendingActions.heavy;
   hero.charge = 0; hero.chargeLv = 0; hero.heavyUsed = true;
 }
 
@@ -1029,6 +1044,19 @@ function releaseCharge() {
   startAction('SPIN_IN');
 }
 
+function bufferAction(name, direction = null) {
+  const h = hero;
+  const remaining = h.act ? h.act.def.dur - h.act.t : 0;
+  h.pendingActions[name] = { direction, until: G.time + Math.max(0.35, remaining + 0.2) };
+}
+
+function pendingAction(name) {
+  const action = hero.pendingActions[name];
+  if (action && action.until >= G.time) return action;
+  delete hero.pendingActions[name];
+  return null;
+}
+
 function updateHero(dt) {
   const h = hero;
   if (h.dead) {
@@ -1049,17 +1077,24 @@ function updateHero(dt) {
   // input
   const holdingTurn = false; // light-combo spins flow straight on; the charged spin pauses in SPIN_OUT
   const locked = h.act?.def.clashLocked;
-  if (input.consume('rage') && !locked && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
+  if (input.consume('rage') && h.rageT <= 0) {
+    if (h.rage >= 100) bufferAction('rage');
+    else callout('覚醒ゲージ不足', '#ffcc9a');
+  }
+  if (pendingAction('rage') && !locked && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && h.act?.name !== 'RAGE') {
+    delete h.pendingActions.rage;
     h.rage = 0; h.rageT = awakeningDuration(); startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
   const attackPressed = input.consume('attack');
   if (attackPressed) h.lastSlashPress = G.time;
   const wantAttack = attackPressed || (input.held.has('attack') && !h.act);
   if (wantAttack) h.lastAtkT = G.time;
-  const wantHeavy = input.consume('heavy');
-  if (wantHeavy) h.heavyUsed = false;
-  if (!input.held.has('heavy') && !wantHeavy) h.heavyUsed = true;   // released: nothing left to carry over
-  const wantDodge = input.consume('dodge');
+  const heavyPressed = input.consume('heavy');
+  if (heavyPressed) { h.heavyUsed = false; bufferAction('heavy', readCutDirection()); }
+  if (!input.held.has('heavy') && !heavyPressed) h.heavyUsed = true;
+  const wantHeavy = pendingAction('heavy');
+  if (input.consume('dodge')) bufferAction('dodge');
+  const wantDodge = pendingAction('dodge');
   const act = h.act;
   const sliding = finishingDodgeCut(act);
   const cutDirection = attackPressed ? readCutDirection() : null;
@@ -1074,7 +1109,10 @@ function updateHero(dt) {
   }
   else if (!sliding && !wantDodge && !wantHeavy && !cutDirection && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
-    && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
+    && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) {
+    delete h.pendingActions.dodge;
+    startAction('DODGE');
+  }
   else if (!act) {
     // heavy: a press, or the button still held from a press that could not be used yet (made while
     // hurt, rolling or mid-attack), starts the charge; one charge per press
@@ -1090,8 +1128,10 @@ function updateHero(dt) {
     if (wantAttack && act.queued !== 'heavy') {
       act.queued = 'light'; act.queuedDir = cutDirection; act.queuedManual = Boolean(cutDirection);
     }
-    if (wantHeavy) { act.queued = 'heavy'; act.queuedHeavyDir = readCutDirection(); }
-    if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) {
+    if (wantHeavy && act.def.chainAt <= act.def.dur) {
+      act.queued = 'heavy'; act.queuedHeavyDir = wantHeavy.direction;
+    }
+    if (input.held.has('attack') && !act.queued && act.t >= act.def.active[0]) {
       act.queued = 'light'; act.queuedDir = readCutDirection();
     }
   }
@@ -1108,13 +1148,14 @@ function updateHero(dt) {
   }
 
   // action progression
-  const speedK = rageMult();
   const [mx, my] = input.move();
   let moving = Math.hypot(mx, my);
   let turnAxis;
   let beginTurnHold = false;
+  const poseAction = h.act;
   if (h.act) {
     const a = h.act, d = a.def;
+    const speedK = rageMult() * (a.light ? 1 + (h.stats.technique - 1) / 18 : 1);
     turnAxis = TURN_AXIS[a.name];
     const rolling = a.name === 'DODGE';
     const dodgeTime = rolling ? a.t : a.dodgeTime;
@@ -1167,9 +1208,10 @@ function updateHero(dt) {
       h.pose.rootYaw = h.target.rootYaw = 0;
       h.spinLoops++;
       startAction(h.spinLoops < (h.spinTarget || 1) ? 'SPIN_LOOP' : 'SPIN_OUT');
-    } else if (d.type && !finishingDodgeCut(a) && a.t >= d.chainAt && a.queued
-      && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
+    } else if (d.type && !finishingDodgeCut(a) && a.t >= Math.max(d.chainAt, d.active[1]) && a.queued
+      && (!d.impact || a.hitDone) && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
       if (a.queued === 'heavy') {
+        delete h.pendingActions.heavy;
         startFinisher(a);
       } else {
         if (!a.light) h.lightCount = 0;
@@ -1201,8 +1243,9 @@ function updateHero(dt) {
   if (!holdingTurn && !beginTurnHold) pushOut(h, 0.45);
   const r = Math.hypot(h.x, h.z); if (r > ARENA) { h.x *= ARENA / r; h.z *= ARENA / r; }
 
+  if (h.act && h.act !== poseAction) sampleKeys(h.act.def.keys, h.act.t, h.target);
   if (!holdingTurn) smoothPose(h.pose, h.target, Math.min(1, dt * 30));
-  if (turnAxis && h.act) h.pose[turnAxis] = h.target[turnAxis] || 0;
+  if (turnAxis && h.act === poseAction) h.pose[turnAxis] = h.target[turnAxis] || 0;
   applyPose(h.rig, h.pose);
   h.rig.root.position.set(h.x, 0, h.z);
   h.rig.root.rotation.y = h.face;
@@ -2106,6 +2149,7 @@ function resetGame(keepLevel = false) {
   enemies.length = 0; fx.clear(); crowd.begin(); crowd.end();
   if (!keepLevel) { hero.level = 1; hero.exp = 0; hero.stats = loadStats(); }
   hero.maxHp = maxHealth(); hero.comboIdx = 0; hero.lightCount = 0; hero.lightRecovery = 0;
+  hero.neutralChain = 0; hero.pendingActions = {};
   hero.lastAtkT = null; hero.lastSlashPress = null; hero.flowSense = null; hero.flowRun = 0;
   UI.statSelect.hidden = true; UI.hud.inert = false;
   hero.x = 0; hero.z = 0; hero.face = 0; hero.hp = hero.maxHp; hero.hpLag = hero.maxHp; hero.rage = 0; hero.rageT = 0;
@@ -2170,6 +2214,7 @@ function setPaused(p) {
   G.state = p ? 'pause' : 'play';
   UI.pause.hidden = !p;
   if (sfx.ctx) p ? sfx.ctx.suspend() : sfx.ctx.resume();
+  hero.pendingActions = {};
   input.clear();
 }
 
