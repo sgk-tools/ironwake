@@ -107,14 +107,14 @@ async function run() {
     for (const [name, passed] of Object.entries(checks)) assert.ok(passed, name);
     for (const chain of [low, max]) {
       assert.ok(['SPIN1', 'REVSPIN'].includes(chain.moves[1]?.name));
-      assert.ok(['RFLIP', 'WHEEL'].includes(chain.moves[2]?.name));
+      assert.ok(['RFLIP', 'L6'].includes(chain.moves[2]?.name));
       assert.ok(Math.abs(chain.moves[2].yaw) < Math.PI, 'yaw unwound after full turn');
     }
     assert.equal(max.moves.length, 12);
     assert.equal(max.idle, false);
-    assert.ok((max.moves[2].time - max.moves[0].time) < 0.8 * (low.moves[2].time - low.moves[0].time));
+    assert.ok(Math.abs((max.moves[2].time - max.moves[0].time) - (low.moves[2].time - low.moves[0].time)) < 0.07);
     assert.deepEqual(errors, []);
-    console.log('Buffered heavy, dodge and awakening, multitouch release, both rotations and faster uninterrupted Lv10 chains passed.');
+    console.log('Buffered heavy, dodge and awakening, multitouch release, rotation chains and unchanged speed at Lv10 passed.');
     console.log('Time to third attack:', (low.moves[2].time - low.moves[0].time).toFixed(3), 's at Lv1;',
       (max.moves[2].time - max.moves[0].time).toFixed(3), 's at Lv10.');
   } finally {

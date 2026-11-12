@@ -785,8 +785,8 @@ function pickLight(prev, dir = readCutDirection()) {
       return spin === prev ? (spin === 'SPIN1' ? 'REVSPIN' : 'SPIN1') : spin;
     }
     if (step === 2) {
-      const flip = alternate ? 'RFLIP' : 'WHEEL';
-      return flip === prev ? (flip === 'RFLIP' ? 'WHEEL' : 'RFLIP') : flip;
+      const cut = alternate ? 'RFLIP' : 'L6';
+      return cut === prev ? (cut === 'RFLIP' ? 'L6' : 'RFLIP') : cut;
     }
     return pickFrom(chain[hero.comboIdx], prev);
   }
@@ -813,11 +813,12 @@ function startDirectedCut(name, dir, facing) {
   startAction(name);
 }
 
-function startLight(prev, dir = readCutDirection()) {
+function startLight(prev, dir = readCutDirection(), spin) {
   const previous = hero.act;
   const facing = previous?.cutFacing ?? hero.face;
   const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
-  const name = pickLight(prev, dir);
+  const next = pickLight(prev, dir);
+  const name = spin || next;
   startDirectedCut(name, dir, facing);
   hero.act.light = true;
   hero.act.cutFacing = prev || dir ? facing : hero.face;
@@ -970,6 +971,20 @@ function flowBucket(turn) {
   if (a > 2.75) return 'BACK';
   return side + (a < 1.18 ? '45' : a < 1.97 ? '90' : '135');
 }
+function queueLateSideSpin(a) {
+  if (!a?.light || a.queued === 'heavy' || a.sideSpin || hero.lightCount >= lightLimit()) return false;
+  const dir = readCutDirection();
+  const previous = a.sideInput === undefined ? a.cutDir : a.sideInput;
+  a.sideInput = dir;
+  const [start, end] = a.def.active;
+  if (a.t < start + (end - start) * 0.8 || dir === previous || (dir !== 'L90' && dir !== 'R90')) return false;
+  a.queued = 'light';
+  a.queuedDir = dir;
+  a.queuedManual = true;
+  a.sideSpin = dir === 'L90' ? 'SPIN1' : 'REVSPIN';
+  return true;
+}
+
 // returns true when a redirect started
 function tryFlow() {
   const h = hero, a = h.act;
@@ -1107,6 +1122,7 @@ function updateHero(dt) {
       if (direction) act.nextPattern = CLASH_PATTERNS[direction];
     }
   }
+  else if (!sliding && !wantDodge && !wantHeavy && queueLateSideSpin(act)) { /* spin queued at the end of the cut */ }
   else if (!sliding && !wantDodge && !wantHeavy && !cutDirection && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) {
@@ -1125,7 +1141,7 @@ function updateHero(dt) {
     // Keep attack presses through stagger and other passive states.
     if (wantAttack && act.name !== 'CHARGE' && act.name !== 'DODGE') input.pressed.add('attack');
   } else if (act.def.type) {
-    if (wantAttack && act.queued !== 'heavy') {
+    if (wantAttack && act.queued !== 'heavy' && !act.sideSpin) {
       act.queued = 'light'; act.queuedDir = cutDirection; act.queuedManual = Boolean(cutDirection);
     }
     if (wantHeavy && act.def.chainAt <= act.def.dur) {
@@ -1155,7 +1171,7 @@ function updateHero(dt) {
   const poseAction = h.act;
   if (h.act) {
     const a = h.act, d = a.def;
-    const speedK = rageMult() * (a.light ? 1 + (h.stats.technique - 1) / 18 : 1);
+    const speedK = rageMult();
     turnAxis = TURN_AXIS[a.name];
     const rolling = a.name === 'DODGE';
     const dodgeTime = rolling ? a.t : a.dodgeTime;
@@ -1215,7 +1231,7 @@ function updateHero(dt) {
         startFinisher(a);
       } else {
         if (!a.light) h.lightCount = 0;
-        startLight(a.name, a.queuedDir);
+        startLight(a.name, a.queuedDir, a.sideSpin);
       }
     } else if (a.t >= d.dur && !finishingDodgeCut(a)) {
       if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
@@ -1310,6 +1326,7 @@ function heroHits(a) {
     if (a.hitDone || !boss || boss.dead || a.t < (d.active[0] + d.active[1]) / 2) return;
     a.hitDone = true;
     damageBoss(d.dmg * mult);
+    clashCollateral(h, 3.4, false);
     sfx.play('hit');
     return;
   }
@@ -1488,6 +1505,19 @@ function startClash() {
   setBoss('clash');
 }
 // keeps both fighters squared up and fires one blade-on-blade impact per beat
+function clashCollateral(fighter, reach, vertical) {
+  const forwardX = Math.sin(fighter.face), forwardZ = Math.cos(fighter.face);
+  for (const enemy of enemies) {
+    if (enemy.dead || enemy.y > 2.5) continue;
+    const dx = enemy.x - fighter.x, dz = enemy.z - fighter.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > reach + ENEMY[enemy.type].radius) continue;
+    const forward = dx * forwardX + dz * forwardZ;
+    if (forward < distance * (vertical ? 0.45 : -0.15)) continue;
+    damageEnemy(enemy, enemy.hp, 5, 3, true, fighter.x, fighter.z);
+  }
+}
+
 function clashStep(a) {
   const h = hero, b = boss;
   const end = CLASH_N * CLASH_BEAT;
@@ -1532,6 +1562,9 @@ function clashStep(a) {
     if (last) { fx.hitFlash(cx, cy, cz, true, false); fx.ring(cx, cz, 3.4, 0xfff0c0, 0.45); }
     sfx.play(last ? 'parry' : 'clang', last ? 1 : 0.9);
     G.hitstop = Math.max(G.hitstop, last ? 0.14 : 0.06); G.shake = Math.max(G.shake, last ? 0.8 : 0.4);
+    const vertical = CLASH_VERTICAL.has(a.cut);
+    clashCollateral(h, 3.3, vertical);
+    clashCollateral(b, 3.4 * bossScale() / 2.3, vertical);
     G.clashHits = (G.clashHits || 0) + 1;
   }
 }
@@ -1809,6 +1842,7 @@ function updateBoss(dt) {
         if (counter) {
           hero.iframe = 0;
           hurtHero(damage, b.x, b.z);
+          clashCollateral(b, 3.4 * sk, false);
           if (hero.act?.name === 'CLASH') startAction('HURT');
         } else {
           const ang = Math.abs(angLerp(b.face, toHero, 1) - b.face);
