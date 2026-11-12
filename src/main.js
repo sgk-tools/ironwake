@@ -755,20 +755,35 @@ function startLight(prev, dir) {
 
 // heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
 const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
-const LEVEL_MAX = 17;
-const STAT_MAX = 5;
-const STAT_KEYS = ['health', 'power', 'technique', 'dodge'];
+const STAT_MAX = 10;
+const STAT_KEYS = ['health', 'power', 'technique', 'dodge', 'awakening'];
+const LEVEL_MAX = 1 + STAT_KEYS.length * (STAT_MAX - 1);
 const STAT_BUTTONS = [...UI.statSelect.querySelectorAll('[data-stat]')];
+const STAT_BARS = STAT_BUTTONS.map(button => {
+  const segments = Array.from({ length: STAT_MAX }, () => document.createElement('span'));
+  button.querySelector('.stat-bar').append(...segments);
+  return segments;
+});
 const HEALTH_PER_RANK = 90;
 const POWER_PER_RANK = 0.15;
 const LIGHT_RECOVERY = 0.22;
-const DODGE_IFRAMES = [0.24, 0.27, 0.30, 0.33, HERO_ACTIONS.DODGE.iframes[1]];
+const DODGE_IFRAMES = [0.24, 0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.44, 0.46, 0.48];
+const [, DODGE_MOVE_END, DODGE_MOVE_SPEED] = HERO_ACTIONS.DODGE.lunge;
+const dodgeInvulnerability = () => DODGE_IFRAMES[hero.stats.dodge - 1];
+const dodgeReaction = () => (STAT_MAX - hero.stats.dodge) * 0.01;
+const finishingDodgeCut = action => action?.dodgeTime != null
+  && action.dodgeTime < Math.max(DODGE_MOVE_END, dodgeInvulnerability());
 const DODGE_CUT = { fwd: 'DASH', back: 'UPPER', left: 'CROSS', right: 'CROSS2' };
 
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + POWER_PER_RANK * (hero.stats.power - 1);
 const maxHealth = () => 1000 + HEALTH_PER_RANK * (hero.stats.health - 1);
 const lightLimit = () => hero.stats.technique === STAT_MAX ? Infinity : hero.stats.technique + 2;
+const awakeningDuration = () => 12 + (hero.stats.awakening - 1);
+
+function gainRage(amount) {
+  hero.rage = Math.min(100, hero.rage + amount * (1 + 0.1 * (hero.stats.awakening - 1)));
+}
 
 function loadStats(saved) {
   return Object.fromEntries(STAT_KEYS.map(key => {
@@ -799,11 +814,12 @@ function showStatSelection() {
   UI.statSelect.hidden = false;
   UI.hud.inert = true;
   $('#stat-points').textContent = `Lv ${hero.level} ・ 残り ${statPoints()} 回`;
-  for (const button of STAT_BUTTONS) {
+  STAT_BUTTONS.forEach((button, index) => {
     const rank = hero.stats[button.dataset.stat];
     button.disabled = rank >= STAT_MAX;
-    button.querySelector('.stat-rank').textContent = button.disabled ? `Lv ${rank}（最大）` : `Lv ${rank} → ${rank + 1}`;
-  }
+    button.querySelector('.stat-rank').textContent = `${rank}/${STAT_MAX}`;
+    STAT_BARS[index].forEach((segment, step) => segment.classList.toggle('filled', step < rank));
+  });
   if (!UI.statSelect.contains(document.activeElement) || document.activeElement.disabled) {
     STAT_BUTTONS.find(button => !button.disabled)?.focus();
   }
@@ -905,8 +921,7 @@ function startDodgeCut(roll) {
   h.aimNext = false;
   startAction(name);
   h.lightCount = 1; h.comboIdx = 0; h.act.light = true;
-  h.act.dodgeInvuln = Math.max(0, DODGE_IFRAMES[h.stats.dodge - 1] - roll.t);
-  h.act.dodgeSlide = Math.max(0, roll.def.lunge[1] - roll.t);
+  h.act.dodgeTime = roll.t;
   h.act.dodgeFacing = rollFacing;
 }
 
@@ -954,7 +969,7 @@ function updateHero(dt) {
   const holdingTurn = false; // light-combo spins flow straight on; the charged spin pauses in SPIN_OUT
   const locked = h.act?.def.clashLocked;
   if (input.consume('rage') && !locked && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
-    h.rage = 0; h.rageT = 12; startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
+    h.rage = 0; h.rageT = awakeningDuration(); startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
   const attackPressed = input.consume('attack');
   const wantAttack = attackPressed || (input.held.has('attack') && !h.act);
@@ -964,14 +979,14 @@ function updateHero(dt) {
   if (!input.held.has('heavy') && !wantHeavy) h.heavyUsed = true;   // released: nothing left to carry over
   const wantDodge = input.consume('dodge');
   const act = h.act;
-  const sliding = act?.dodgeSlide > 0;
+  const sliding = finishingDodgeCut(act);
   // boss fight: side/back + attack just before a boss strike = evade-cut (checked before everything else)
   const mk = !locked && !sliding && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
   if (mk) startMikiri(mk);
   else if (locked) { /* ignore input */ }
   else if (!sliding && !wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
-    && (h.stats.dodge === STAT_MAX || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
+    && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
     // heavy: a press, or the button still held from a press that could not be used yet (made while
     // hurt, rolling or mid-attack), starts the charge; one charge per press
@@ -1009,8 +1024,10 @@ function updateHero(dt) {
   if (h.act) {
     const a = h.act, d = a.def;
     turnAxis = TURN_AXIS[a.name];
+    const rolling = a.name === 'DODGE';
+    const dodgeTime = rolling ? a.t : a.dodgeTime;
     a.t += dt * (d.type ? speedK : 1);
-    if (a.dodgeInvuln > 0) a.dodgeInvuln -= dt;
+    if (a.dodgeTime != null) a.dodgeTime += dt;
     sampleKeys(d.keys, a.t, h.target);
     if (d.mikiri) mikiriMove(a);
     if (a.flowed && h.faceTo != null) {
@@ -1019,12 +1036,15 @@ function updateHero(dt) {
       if (a.t < 0.22) { h.x += Math.sin(h.faceTo) * 3.2 * dt; h.z += Math.cos(h.faceTo) * 3.2 * dt; }
     }
     if (d.clash) clashStep(a);
-    if (a.dodgeSlide > 0) {
-      const distance = Math.min(dt, a.dodgeSlide) * HERO_ACTIONS.DODGE.lunge[2];
-      h.x += Math.sin(a.dodgeFacing) * distance;
-      h.z += Math.cos(a.dodgeFacing) * distance;
-      a.dodgeSlide -= dt;
-    } else if (!holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
+    if (dodgeTime < DODGE_MOVE_END) {
+      const reaction = dodgeReaction();
+      const moveTime = Math.min(dodgeTime + dt, DODGE_MOVE_END) - Math.max(dodgeTime, reaction);
+      // Keep the full roll distance while changing when movement starts.
+      const distance = Math.max(0, moveTime) * DODGE_MOVE_SPEED * DODGE_MOVE_END / (DODGE_MOVE_END - reaction);
+      const facing = a.dodgeFacing ?? h.face;
+      h.x += Math.sin(facing) * distance;
+      h.z += Math.cos(facing) * distance;
+    } else if (!rolling && !holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
       // a redirected cut lunges where the stick points, not where the body is still turning from
       const la = a.flowed && h.faceTo != null ? h.faceTo : h.face;
@@ -1055,7 +1075,7 @@ function updateHero(dt) {
       h.pose.rootYaw = h.target.rootYaw = 0;
       h.spinLoops++;
       startAction(h.spinLoops < (h.spinTarget || 1) ? 'SPIN_LOOP' : 'SPIN_OUT');
-    } else if (d.type && !(a.dodgeSlide > 0) && a.t >= d.chainAt && a.queued
+    } else if (d.type && !finishingDodgeCut(a) && a.t >= d.chainAt && a.queued
       && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
       if (a.queued === 'heavy') {
         // heavy mid-combo: a finisher that depends on how many light hits came before
@@ -1066,7 +1086,7 @@ function updateHero(dt) {
         if (!a.light) h.lightCount = 0;
         startLight(a.name, a.queuedDir);
       }
-    } else if (a.t >= d.dur) {
+    } else if (a.t >= d.dur && !finishingDodgeCut(a)) {
       if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
@@ -1214,7 +1234,7 @@ function impact(a) {
 
 function addCombo() {
   G.combo++; G.comboT = 2.6; G.maxCombo = Math.max(G.maxCombo, G.combo);
-  if (hero.rageT <= 0) hero.rage = Math.min(100, hero.rage + 1.4);
+  if (hero.rageT <= 0) gainRage(1.4);
 }
 
 function damageEnemy(e, dmg, kb, up, heavy, ox, oz, bonusLift = 0) {
@@ -1251,7 +1271,8 @@ function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
   if (h.iframe > 0 || h.dead || G.state !== 'play') return;
   const a = h.act;
-  if (a?.dodgeInvuln > 0 || (a?.name === 'DODGE' && a.t < DODGE_IFRAMES[h.stats.dodge - 1])) return;
+  const dodgeTime = a?.name === 'DODGE' ? a.t : a?.dodgeTime;
+  if (dodgeTime != null && dodgeTime < dodgeInvulnerability()) return;
   // spinning attacks are invulnerable (charged spin and the spins inside combos)
   if (h.act && SPIN_MOVES.has(h.act.name)) return;
   h.hp -= dmg * (h.rageT > 0 ? 0.6 : 1);
@@ -1428,7 +1449,7 @@ function tryParry() {
   fx.spark(cx, 1.9, cz, 44); fx.ring(cx, cz, 3.2, 0xfff0c0, 0.4); fx.ring(b.x, b.z, 5, 0xffd080, 0.6);
   sfx.play('parry');
   G.hitstop = Math.max(G.hitstop, 0.16); G.slowmo = Math.min(G.slowmo, 0.35); G.shake = Math.max(G.shake, 0.75);
-  h.rage = Math.min(100, h.rage + 12); h.iframe = Math.max(h.iframe, 0.25);
+  gainRage(12); h.iframe = Math.max(h.iframe, 0.25);
   b.tele = false; b.poise = 0; b.y = 0;
   G.parries = (G.parries || 0) + 1;
   startClash();
@@ -1980,6 +2001,7 @@ let last = performance.now(), fpsAcc = 0, fpsN = 0, fpsCheck = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (G.state === 'stat-select') return;
   // adaptive quality: drop resolution / shadows if frames are slow
   fpsAcc += dt; fpsN++; fpsCheck += dt;
   if (fpsCheck > 2.5 && G.state === 'play') {
@@ -2014,7 +2036,7 @@ function frame(now) {
     hero.face = Math.PI + Math.sin(G.time * 0.3) * 0.25; hero.rig.root.rotation.y = hero.face;
     fx.update(dt);
   }
-  if (G.state === 'debug') return;
+  if (G.state === 'debug' || G.state === 'stat-select') return;
   if (hero) updateCamera(dt);
   renderer.render(scene, camera);
 }
@@ -2161,6 +2183,8 @@ UI.statSelect.addEventListener('keydown', e => {
     (e.shiftKey ? last : first).focus();
   }
 });
+// Resize redraws the frozen battlefield once without advancing it.
+window.addEventListener('resize', () => { if (G.state === 'stat-select') renderer.render(scene, camera); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play') setPaused(true); });
 
 requestAnimationFrame(frame);

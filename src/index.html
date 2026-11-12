@@ -171,16 +171,41 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .weapon-options button { min-height: 44px; padding: 6px; border: 1px solid #817258; border-radius: 6px; background: #242019; }
 .weapon-options button[aria-pressed="true"] { border-color: var(--ember); background: #3a261c; color: #ffcf9a; }
 #weapon-picker-close { min-height: 44px; }
-#stat-select { overflow: auto; }
-#stat-select .panel { gap: 10px; padding: 12px; }
-#stat-select h2 { font-size: clamp(24px, 6vw, 36px); letter-spacing: 0.1em; }
-.stat-options { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.stat-option { display: grid; gap: 3px; min-height: 66px; padding: 8px; border: 1px solid #8a5b42; background: #291a15; text-align: left; }
-.stat-option:hover:not(:disabled) { border-color: var(--ember); }
-.stat-option:disabled { opacity: 0.52; cursor: default; }
-.stat-option strong { font-size: 16px; }
-.stat-rank { color: #ffd080; font-size: 13px; }
-.stat-effect { color: var(--ash-dim); font-size: 12px; }
+#stat-select { grid-template-rows: minmax(0, 1fr); background: rgba(10,5,4,0.55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.stat-panel {
+  box-sizing: border-box; width: min(900px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 27%); gap: clamp(8px, 2vw, 18px);
+  padding: clamp(8px, 2vw, 22px); border: 1px solid #917358; border-radius: 6px;
+  background: linear-gradient(130deg, #292019, #160f0c 68%); box-shadow: 0 10px 30px #000a;
+}
+.stat-content { min-width: 0; }
+#stat-title { margin: 0; padding-bottom: 4px; border-bottom: 1px solid #8a5b42; font: 800 clamp(25px, 5vw, 52px)/1.15 var(--f-display); }
+.stat-prompt { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0 12px; margin: 4px 0 8px; color: var(--ash); font-size: clamp(12px, 2vw, 17px); }
+#stat-points { color: #ffd080; font-variant-numeric: tabular-nums; }
+.stat-options { display: grid; gap: 4px; }
+.stat-option {
+  display: grid; grid-template-columns: 3.5em minmax(0, 1fr) 3em; align-items: center;
+  gap: 1px clamp(4px, 1vw, 12px); min-height: 44px; padding: 4px clamp(4px, 1vw, 12px);
+  border: 1px solid #73523e; background: #1d1512; text-align: left; font-size: clamp(12px, 2vw, 18px);
+}
+.stat-option:active:not(:disabled), .stat-option:focus-visible, .stat-option[data-stat="awakening"]:not(:disabled) { border-color: var(--ember); background: #2b1a11; }
+.stat-option:focus-visible { outline-offset: 1px; }
+.stat-option:disabled { opacity: 0.65; cursor: default; }
+.stat-bar { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: clamp(1px, 0.25vw, 3px); height: clamp(10px, 2.5vw, 24px); }
+.stat-bar span { background: #37302b; box-shadow: inset 0 0 0 1px #62554a; }
+.stat-bar .filled { background: linear-gradient(#c3824b, #8c502a); box-shadow: inset 0 0 0 1px #ce9b69; }
+.stat-rank { text-align: right; color: #ffd8b0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat-effect { grid-column: 1 / -1; color: #e9c3a5; font-size: clamp(10px, 1.6vw, 14px); }
+.stat-portrait { position: relative; min-width: 0; border: 1px solid #886344; background: #21130c; }
+.stat-portrait img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 53% top; }
+@media (max-width: 520px) and (orientation: portrait) {
+  .stat-portrait { align-self: start; aspect-ratio: 3 / 4; }
+}
+@media (max-height: 360px) and (orientation: landscape) {
+  #stat-title { font-size: 28px; }
+  .stat-panel { padding: 8px; }
+  .stat-prompt { margin: 3px 0 4px; }
+}
 .stats { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; border-top: 1px solid rgba(233,221,210,0.15); border-bottom: 1px solid rgba(233,221,210,0.15); }
 .stats div { display: grid; gap: 2px; padding: 12px 4px; }
 .stats dt { font-size: 10px; letter-spacing: 0.24em; color: var(--ash-dim); }
@@ -267,15 +292,19 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 </div>
 
 <div id="stat-select" class="overlay" role="dialog" aria-modal="true" aria-labelledby="stat-title" aria-describedby="stat-points" hidden>
-  <div class="panel">
-    <h2 id="stat-title">強化するステータスを選ぶ</h2>
-    <p id="stat-points" aria-live="polite"></p>
-    <div class="stat-options">
-      <button class="stat-option" data-stat="health"><strong>体力</strong><span class="stat-rank"></span><span class="stat-effect">最大体力が増える</span></button>
-      <button class="stat-option" data-stat="power"><strong>攻撃力</strong><span class="stat-rank"></span><span class="stat-effect">ダメージと吹き飛ばしが強くなる</span></button>
-      <button class="stat-option" data-stat="technique"><strong>技術</strong><span class="stat-rank"></span><span class="stat-effect">斬を長押ししたときの連撃数が増える</span></button>
-      <button class="stat-option" data-stat="dodge"><strong>回避</strong><span class="stat-rank"></span><span class="stat-effect">回避の無敵時間が延びる</span></button>
+  <div class="stat-panel">
+    <div class="stat-content">
+      <h2 id="stat-title">レベルアップ</h2>
+      <p class="stat-prompt"><span>強化する項目を選ぶ</span><span id="stat-points" aria-live="polite"></span></p>
+      <div class="stat-options">
+        <button type="button" class="stat-option" data-stat="health" title="最大体力が増える"><strong>体力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
+        <button type="button" class="stat-option" data-stat="power" title="ダメージと吹き飛ばしが強くなる"><strong>攻撃力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
+        <button type="button" class="stat-option" data-stat="technique" title="斬を長押ししたときの連撃数が増える"><strong>技術</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
+        <button type="button" class="stat-option" data-stat="dodge" title="回避動作が速くなり、無敵時間が延びる"><strong>回避</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
+        <button type="button" class="stat-option" data-stat="awakening"><strong>覚醒</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">覚醒ゲージが早くたまり、効果時間が延びる</span></button>
+      </div>
     </div>
+    <div class="stat-portrait"><img src="assets/level-up-portrait.png" alt="鉄塊の傭兵"></div>
   </div>
 </div>
 

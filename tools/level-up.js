@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 
 const url = process.argv[2] || 'http://localhost:8125/dist/test.html';
 const saveKey = 'ironwake-save-v1';
-const maxStats = { health: 5, power: 5, technique: 5, dodge: 5 };
+const maxStats = { health: 10, power: 10, technique: 10, dodge: 10, awakening: 10 };
 
 async function run() {
   const browser = await chromium.launch({
@@ -21,13 +21,32 @@ async function run() {
     const dialog = page.locator('#stat-select');
     await dialog.waitFor({ state: 'visible' });
     const buttons = await dialog.locator('button:not(:disabled)').all();
-    assert.equal(buttons.length, 4);
-    const frozen = await page.evaluate(() => window.__game.G.time);
+    assert.equal(buttons.length, 5);
+    assert.equal(await dialog.getByRole('heading', { name: 'レベルアップ' }).count(), 1);
+    assert.equal(await dialog.locator('.stat-bar span').count(), 50);
+    assert.equal(await dialog.locator('.stat-bar .filled').count(), 5);
+    await page.waitForFunction(() => document.querySelector('.stat-portrait img').naturalWidth > 0);
+    const portrait = await dialog.locator('.stat-portrait').boundingBox();
+    const firstStat = await buttons[0].boundingBox();
+    assert.ok(portrait.x > firstStat.x + firstStat.width && portrait.y < firstStat.y);
+    const freezeState = () => page.evaluate(() => {
+      const g = window.__game;
+      return [g.G.time, g.renderer.info.render.frame];
+    });
+    const frozen = await freezeState();
     for (const button of buttons) {
       const box = await button.boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 360);
     }
-    assert.equal(await page.evaluate(() => window.__game.G.time), frozen);
+    assert.deepEqual(await freezeState(), frozen);
+    await page.setViewportSize({ width: 852, height: 393 });
+    await page.waitForFunction(frame => window.__game.renderer.info.render.frame > frame, frozen[1]);
+    assert.equal((await freezeState())[0], frozen[0]);
+    for (const button of buttons) {
+      const box = await button.boundingBox();
+      assert.ok(box.height >= 44 && box.y >= 0 && box.y + box.height <= 393);
+    }
+    if (process.env.IRONWAKE_LEVEL_UP_PREVIEW) await page.screenshot({ path: process.env.IRONWAKE_LEVEL_UP_PREVIEW });
     await page.keyboard.press('Space');
     await dialog.waitFor({ state: 'hidden' });
     assert.deepEqual(await page.evaluate(() => {
@@ -40,14 +59,14 @@ async function run() {
     await page.evaluate(() => {
       const g = window.__game;
       g.renderer.render = () => {};
-      g.gainExp(5000);
+      g.gainExp(50000);
     });
     await dialog.waitFor({ state: 'visible' });
-    assert.match(await page.locator('#stat-points').textContent(), /Lv 17.*15/);
-    for (const [key, count] of Object.entries({ health: 3, power: 4, technique: 4, dodge: 4 })) {
+    assert.match(await page.locator('#stat-points').textContent(), /Lv 46.*44/);
+    for (const [key, count] of Object.entries({ health: 8, power: 9, technique: 9, dodge: 9, awakening: 9 })) {
       const button = dialog.locator('[data-stat="' + key + '"]');
       for (let i = 0; i < count; i++) await button.tap();
-      if (key !== 'dodge') assert.ok(await button.isDisabled(), key);
+      if (key !== 'awakening') assert.ok(await button.isDisabled(), key);
     }
     await dialog.waitFor({ state: 'hidden' });
     const readStats = () => page.evaluate(() => window.__game.hero().stats);
@@ -55,8 +74,8 @@ async function run() {
     assert.deepEqual(await page.evaluate(() => {
       const h = window.__game.hero();
       return [h.exp, h.maxHp];
-    }), [0, 1360]);
-    console.log('Lv17, 16 selections, touch input and all Lv5 caps passed');
+    }), [0, 1810]);
+    console.log('Lv46, 45 selections, touch input and all Lv10 caps passed');
 
     await page.evaluate(() => {
       const g = window.__game;
@@ -72,7 +91,7 @@ async function run() {
     assert.deepEqual(await readStats(), maxStats);
     const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), saveKey);
     assert.equal(saved.stage, 1);
-    assert.equal(saved.level, 17);
+    assert.equal(saved.level, 46);
     assert.deepEqual(saved.stats, maxStats);
     const lose = async () => {
       await page.evaluate(() => {
@@ -96,13 +115,16 @@ async function run() {
     await page.locator('#btn-continue').click();
     await dialog.waitFor({ state: 'visible' });
     assert.match(await page.locator('#stat-points').textContent(), /Lv 4.*3/);
-    assert.deepEqual(await readStats(), { health: 1, power: 1, technique: 1, dodge: 1 });
+    assert.deepEqual(await readStats(), { health: 1, power: 1, technique: 1, dodge: 1, awakening: 1 });
     for (let i = 0; i < 3; i++) await page.locator('[data-stat="power"]').click();
     await dialog.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => window.__game.G.stageIdx), 2);
+    await page.evaluate(() => window.__game.startGame(0, 11, 0, { health: 2, power: 3, technique: 4, dodge: 5 }));
+    assert.deepEqual(await readStats(), { health: 2, power: 3, technique: 4, dodge: 5, awakening: 1 });
+    await dialog.waitFor({ state: 'hidden' });
     console.log('Stage checkpoint, retry, continue and legacy save migration passed');
 
-    for (let rank = 1; rank <= 5; rank++) {
+    for (let rank = 1; rank <= 10; rank++) {
       const chain = await page.evaluate(technique => new Promise(resolve => {
         const g = window.__game;
         g.startGame(0, technique, 0, { technique });
@@ -111,19 +133,19 @@ async function run() {
         const h = g.hero();
         const end = performance.now() + 8000;
         const tick = () => {
-          if (h.lightRecovery > 0 || h.lightCount >= 9 || performance.now() >= end) {
+          if (h.lightRecovery > 0 || h.lightCount >= 13 || performance.now() >= end) {
             g.input.held.delete('attack');
             resolve({ hits: h.lightCount, recovery: h.lightRecovery });
           } else requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
       }), rank);
-      assert.equal(chain.hits, rank === 5 ? 9 : rank + 2);
-      assert.equal(chain.recovery > 0, rank < 5);
+      assert.equal(chain.hits, rank === 10 ? 13 : rank + 2);
+      assert.equal(chain.recovery > 0, rank < 10);
     }
-    console.log('Held attack chains at all five technique ranks passed');
+    console.log('Held attack chains at all ten technique ranks passed');
 
-    for (let rank = 1; rank <= 5; rank++) {
+    for (let rank = 1; rank <= 10; rank++) {
       const chain = await page.evaluate(technique => new Promise(resolve => {
         const g = window.__game;
         g.startGame(0, technique, 0, { technique });
@@ -136,7 +158,7 @@ async function run() {
         g.input.press('attack');
         const end = performance.now() + 8000;
         const tick = () => {
-          if (h.lightRecovery > 0 || h.lightCount >= 9 || performance.now() >= end) {
+          if (h.lightRecovery > 0 || h.lightCount >= 13 || performance.now() >= end) {
             g.input.keys.clear();
             g.input.held.delete('attack');
             resolve({ hits: h.lightCount, redirects: (g.G.flowCuts || 0) - initialFlows, recovery: h.lightRecovery });
@@ -156,16 +178,17 @@ async function run() {
         };
         requestAnimationFrame(tick);
       }), rank);
-      const hits = rank === 5 ? 9 : rank + 2;
+      const hits = rank === 10 ? 13 : rank + 2;
       assert.equal(chain.hits, hits);
       assert.equal(chain.redirects, hits - 1);
-      assert.equal(chain.recovery > 0, rank < 5);
+      assert.equal(chain.recovery > 0, rank < 10);
     }
-    console.log('Flow redirects count toward all five technique ranks and stop at the cap');
+    console.log('Flow redirects count toward all ten technique ranks and stop at the cap');
 
     const dodge = await page.evaluate(() => {
       const g = window.__game;
-      return [1, 2, 3, 4, 5].map(dodgeRank => {
+      return [0.24, 0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.44, 0.46, 0.48].map((duration, index) => {
+        const dodgeRank = index + 1;
         const canTakeDamage = t => {
           g.startGame(0, dodgeRank, 0, { dodge: dodgeRank });
           const h = g.hero();
@@ -174,16 +197,32 @@ async function run() {
           g.hurtHero(10, h.x, h.z);
           return h.hp < h.maxHp;
         };
-        return [0, 0.25, 0.28, 0.31, 0.34, 0.37].map(canTakeDamage);
+        return [0, duration - 0.005, duration + 0.005].map(canTakeDamage);
       });
     });
-    assert.deepEqual(dodge, [
-      [false, true, true, true, true, true],
-      [false, false, true, true, true, true],
-      [false, false, false, true, true, true],
-      [false, false, false, false, true, true],
-      [false, false, false, false, false, true],
-    ]);
+    assert.deepEqual(dodge, Array.from({ length: 10 }, () => [false, false, true]));
+    const movement = [];
+    for (const dodgeRank of [1, 5, 10]) {
+      movement.push(await page.evaluate(rank => new Promise(resolve => {
+        const g = window.__game;
+        g.input.keys.clear();
+        g.startGame(0, rank, 0, { dodge: rank });
+        g.G.substeps = 1;
+        const h = g.hero();
+        g.startAction('DODGE');
+        let start;
+        const tick = () => {
+          if (h.z > 0 && start == null) start = h.act?.t;
+          if (h.act?.t >= 0.42 || h.act?.name !== 'DODGE') resolve({ start, distance: h.z });
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }), dodgeRank));
+    }
+    assert.ok(movement[0].start >= 0.09 && movement[0].start <= 0.14);
+    assert.ok(movement[1].start >= 0.05 && movement[1].start <= 0.10);
+    assert.ok(movement[2].start > 0 && movement[2].start <= 0.05);
+    assert.ok(movement.every(result => Math.abs(result.distance - 5.04) < 0.001));
     const cancels = await page.evaluate(() => new Promise(resolve => {
       const g = window.__game;
       g.startGame(0, 5, 0, { dodge: 5 });
@@ -192,7 +231,7 @@ async function run() {
       requestAnimationFrame(() => resolve(g.hero().act?.name));
     }));
     assert.equal(cancels, 'DODGE');
-    console.log('Immediate dodge invulnerability at all ranks and rank 5 attack cancel passed');
+    console.log('All ten immunity windows, three movement delays and rank 5 attack cancel passed');
 
     const counters = [];
     for (const key of [null, 'KeyW', 'KeyS', 'KeyA', 'KeyD']) {
@@ -206,16 +245,41 @@ async function run() {
         if (key) g.input.keys.add(key);
         const attack = document.querySelector('#btn-attack');
         attack.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, pointerType: 'touch' }));
-        requestAnimationFrame(() => {
+        const tick = () => {
+          if (h.act?.t < 0.11) {
+            requestAnimationFrame(tick);
+            return;
+          }
           attack.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, pointerType: 'touch' }));
           g.hurtHero(50, h.x, h.z);
           resolve({ action: h.act?.name, sliding: h.z > 0 && Math.abs(h.x) < 0.001, hp: h.hp });
-        });
+        };
+        requestAnimationFrame(tick);
       }), key));
     }
     assert.deepEqual(counters.map(test => test.action), ['L1', 'DASH', 'UPPER', 'CROSS', 'CROSS2']);
     assert.ok(counters.every(test => test.sliding && test.hp === 1000));
-    console.log('Five directional dodge attacks continue roll movement and retain invulnerability');
+    const awakenedCounter = await page.evaluate(() => new Promise(resolve => {
+      const g = window.__game;
+      g.input.keys.clear();
+      g.input.held.clear();
+      g.startGame(0, 10, 0, { dodge: 10 });
+      const h = g.hero();
+      h.rageT = 10;
+      g.startAction('DODGE');
+      g.input.press('attack');
+      g.input.held.delete('attack');
+      const start = g.G.time;
+      const tick = () => {
+        if (g.G.time - start >= 0.39) {
+          g.hurtHero(50, h.x, h.z);
+          resolve(h.hp);
+        } else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }));
+    assert.equal(awakenedCounter, 1000);
+    console.log('Five directional dodge attacks and accelerated counters retain roll invulnerability');
 
     for (const releaseDuringDodge of [false, true]) {
       const heavy = await page.evaluate(early => new Promise(resolve => {
@@ -257,10 +321,10 @@ async function run() {
     console.log('Heavy starts charging during the roll and releases correctly before or after recovery');
 
     const strikes = [];
-    for (const power of [1, 5]) {
-      strikes.push(await page.evaluate(powerRank => new Promise(resolve => {
+    for (const ranks of [{ power: 1, awakening: 1 }, { power: 5, awakening: 10 }]) {
+      strikes.push(await page.evaluate(stats => new Promise(resolve => {
         const g = window.__game;
-        g.startGame(0, powerRank, 0, { power: powerRank });
+        g.startGame(0, stats.power + stats.awakening - 1, 0, stats);
         Object.assign(g.G, { introT: 99, substeps: 1 });
         const h = g.hero();
         const enemy = {
@@ -274,16 +338,26 @@ async function run() {
         const end = performance.now() + 5000;
         const tick = () => {
           if (g.G.time >= stop || performance.now() >= end) {
-            resolve({ damage: 1000 - enemy.hp, distance: Math.hypot(enemy.x - h.x - 1, enemy.z - h.z) });
+            const gain = h.rage;
+            h.act = null;
+            h.rage = 100;
+            g.input.press('rage');
+            requestAnimationFrame(() => {
+              g.input.held.delete('rage');
+              resolve({ damage: 1000 - enemy.hp, distance: Math.hypot(enemy.x - h.x - 1, enemy.z - h.z), gain, duration: h.rageT });
+            });
           } else requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
-      }), power));
+      }), ranks));
     }
     assert.ok(strikes[0].damage > 0 && strikes[1].damage > strikes[0].damage);
     assert.ok(strikes[0].distance > 0 && strikes[1].distance > strikes[0].distance);
+    assert.ok(Math.abs(strikes[0].gain - 1.4) < 1e-6 && Math.abs(strikes[1].gain - 2.66) < 1e-6);
+    assert.ok(strikes[0].duration >= 11.95 && strikes[0].duration <= 12);
+    assert.ok(strikes[1].duration >= 20.95 && strikes[1].duration <= 21);
     assert.deepEqual(errors, []);
-    console.log('Damage and actual enemy knockback distance increased', strikes);
+    console.log('Damage, knockback, awakening gauge gain and awakening duration passed', strikes);
   } finally {
     await browser.close();
   }
