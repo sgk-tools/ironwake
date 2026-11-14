@@ -1366,7 +1366,8 @@ function clashStep(a) {
   const cx = h.x + Math.sin(h.face) * 1.5, cz = h.z + Math.cos(h.face) * 1.5;
   // locked blades: a steady shower of sparks and a low grinding clang
   if (T.press && a.t >= T.pressFrom && a.t < T.impacts[T.impacts.length - 1] && a.t >= (a.sparkT ?? 0)) {
-    a.sparkT = a.t + 0.09; fx.spark(cx, 1.7, cz, 7);
+    a.sparkT = a.t + 0.09; fx.spark(cx, 1.7, cz, 14);
+    if ((a.pressN = (a.pressN || 0) + 1) % 2 === 0) fx.hitFlash(cx, 1.7, cz, false, false);   // a small flash every other burst
     if (Math.random() < 0.45) sfx.play('clang', 0.3);
     G.shake = Math.max(G.shake, 0.22);
   }
