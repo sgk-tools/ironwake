@@ -111,7 +111,7 @@ async function run() {
         const h = g.hero();
         const end = performance.now() + 8000;
         const tick = () => {
-          if (h.lightRecovery > 0 || h.lightCount >= 9 || performance.now() >= end) {
+          if (h.lightRecovery > 0 || h.lightCount >= 12 || performance.now() >= end) {
             g.input.held.delete('attack');
             resolve({ hits: h.lightCount, recovery: h.lightRecovery });
           } else requestAnimationFrame(tick);
@@ -137,7 +137,7 @@ async function run() {
         g.input.press('attack');
         const end = performance.now() + 8000;
         const tick = () => {
-          if (h.lightRecovery > 0 || h.lightCount >= 9 || performance.now() >= end) {
+          if (h.lightRecovery > 0 || h.lightCount >= 12 || performance.now() >= end) {
             g.input.keys.clear();
             g.input.held.delete('attack');
             resolve({ hits: h.lightCount, redirects: (g.G.flowCuts || 0) - initialFlows, recovery: h.lightRecovery });

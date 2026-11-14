@@ -44,6 +44,9 @@ const { chromium } = require('playwright');
         if (L && L.rec === null && a === lastAct && a && a.t > 0.3) measure(L);
         if (a && a.def.type && !armed && a.t >= mid(a) && i + 1 < dirs.length) {
           armed = true; i++;
+          // the cap itself is tested in level-up.js; rank 5 stops at 9 cuts now, so keep the counter low here
+          // and let this test exercise only the redirect mechanics over a long sequence of directions
+          if (h.lightCount > 2) h.lightCount = 2;
           const d = dirs[i];
           pend = { dir: d, ang: ANG[d], turn: wrap(ANG[d] - h.face), prev: a.name, prevT: a.t, prevChain: a.def.chainAt };
           setDir(d);

@@ -48,14 +48,16 @@ const assert = require('node:assert/strict');
       g.input.keys.clear(); for (const k of keys || []) g.input.keys.add(k);
       g.input.press('attack'); g.input.held.delete('attack');
       await window.__until(() => h.act && h.act.light);
-      const mono = h.act.mono, run = h.monoRun; g.input.keys.clear();
+      const mono = h.act.mono, run = h.monoRun, base = h.act.def.dmg; g.input.keys.clear();   // each cut has its own base damage, so compare against it
       await window.__until(() => !h.act || h.act.t > h.act.def.active[1] + 0.05);
-      return { dmg: 1e6 - e.hp, mono, run };
+      return { dmg: 1e6 - e.hp, base, ratio: (1e6 - e.hp) / base, mono, run };
     };
-    return { fresh: await cut(0), tired: await cut(5), linked: await cut(5, ['KeyA']) };
+    return { fresh: await cut(0), tired: await cut(5), linked: await cut(5, ['KeyW']) };   // linked = forward, so the lunge thrust goes at the dummy
   });
   assert.ok(out.decay.fresh.dmg > 0, 'fresh cut hits');
-  assert.ok(Math.abs(out.decay.tired.dmg / out.decay.fresh.dmg - 0.5) < 0.05, `tired cut does half damage (${out.decay.tired.dmg}/${out.decay.fresh.dmg})`);
+  assert.ok(Math.abs(out.decay.fresh.ratio - 1) < 0.05, 'fresh cut: full damage');
+  assert.ok(Math.abs(out.decay.tired.ratio - 0.5) < 0.05, `tired cut does half damage (ratio ${out.decay.tired.ratio})`);
+  assert.ok(Math.abs(out.decay.linked.ratio - 1) < 0.05, 'a linked cut is back at full damage');
   assert.equal(out.decay.linked.mono, 0, 'a direction input is a link');
   assert.equal(out.decay.linked.run, 0);
 

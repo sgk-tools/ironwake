@@ -758,6 +758,7 @@ const MONO_FREE = 3, MONO_ENEMY = 0.5, MONO_BOSS = 0.2, MONO_RECOVERY = 0.6;
 const noteLink = () => { hero.monoRun = 0; };
 const monoFactor = (a, isBoss) => (a?.light && (a.mono || 0) > MONO_FREE) ? (isBoss ? MONO_BOSS : MONO_ENEMY) : 1;
 function startLight(prev, dir) {
+  if (dir === undefined) dir = readDir();   // the first cut of a combo is started without one: read the stick now, as pickLight does
   if (dir) noteLink(); else hero.monoRun = (hero.monoRun || 0) + 1;
   startAction(pickLight(prev, dir));
   hero.act.light = true;
