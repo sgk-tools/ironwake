@@ -14,8 +14,9 @@ const { chromium } = require('playwright');
   await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });
   await p.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   const results = [];
-  for (const stageIdx of [0, 3, 4]) {
-    await p.evaluate((s) => { window.__game.startGame(s, 1, 0); }, stageIdx);
+  const STAGE_LIST = (process.env.STAGES || '0,3,4').split(',').map(Number);   // e.g. STAGES=0
+  for (const stageIdx of STAGE_LIST) {
+    await p.evaluate(({ s, force }) => { window.__game.startGame(s, 1, 0); window.__game.G.clashForce = force || null; }, { s: stageIdx, force: process.env.CLASH_TYPE });   // CLASH_TYPE=lock forces one kind of exchange
     await p.waitForTimeout(500);
     // jump to the boss wave and stop the crowd so only the boss matters
     await p.evaluate(() => { const g = window.__game; g.G.substeps = 4; g.G.introT = 0; g.G.waveIdx = 2; g.enemies.forEach(e => { e.hp = 0; e.dead = true; e.t = 5; }); g.G.spawnLeft = 0; });
@@ -38,15 +39,13 @@ const { chromium } = require('playwright');
           g.input.keys.clear(); g.input.clear();
           const p0 = g.G.parries || 0, m0 = g.G.mikiriHits || 0, c0 = g.G.clashHits || 0, hp0 = h.hp;
           g.setBoss(atk + 'Wind'); bb.tele = false; bb.glinted = false;
-          const expectedHeroDamage = 160 * bb.dmgMul;
-          const expectedBossDamage = g.HERO_ACTIONS.L1.dmg;
           const random = Math.random;
           let rolled = false, sawRecoil = false;
           let bossHpAtClash;
           if (roll !== undefined) {
             Math.random = () => {
               const a = h.act;
-              if (bb.state !== 'clash' || a?.name !== 'CLASH' || a.beat !== 4 || a.t < a.def.active[1]) return random();
+              if (bb.state !== 'clash' || a?.name !== 'CLASH' || a.beat !== a.def.impacts.length || a.t < a.def.active[1]) return random();
               rolled = true;
               Math.random = random;
               return roll;
@@ -73,7 +72,10 @@ const { chromium } = require('playwright');
                 atk, mode, state: bb.state, parried: (g.G.parries || 0) - p0,
                 mikiri: (g.G.mikiriHits || 0) - m0, clash: (g.G.clashHits || 0) - c0,
                 dmg: Math.round(hp0 - h.hp), bossDmg: Math.round((bossHpAtClash ?? bb.maxHp) - bb.hp),
-                expectedHeroDamage: Math.round(expectedHeroDamage), expectedBossDamage: Math.round(expectedBossDamage),
+                // expectations come from the kind of exchange that was actually drawn
+                clashType: bb.clashType, impacts: (g.CLASH_TYPES[bb.clashType] || {}).impacts?.length,
+                expectedHeroDamage: Math.round(160 * bb.dmgMul * ((g.CLASH_TYPES[bb.clashType] || {}).counterMul || 1)),
+                expectedBossDamage: Math.round((g.HERO_ACTIONS[(g.CLASH_TYPES[bb.clashType] || {}).follow] || {}).dmg),
                 act: h.act?.name || null, glint, rolled, sawRecoil,
               });
               return;
@@ -84,7 +86,7 @@ const { chromium } = require('playwright');
           tick();
         }), { atk, mode, roll });
         // The winner lands exactly one hit and a draw staggers both without damage.
-        const exchange = r.rolled && r.parried === 1 && r.clash === 4;
+        const exchange = r.rolled && r.parried === 1 && r.clash === r.impacts;
         const ok = mode === 'none' ? r.dmg > 0 && r.parried === 0
           : mode === 'early' ? r.parried === 0
           : mode === 'draw' ? exchange && r.dmg === 0 && r.bossDmg === 0 && r.sawRecoil

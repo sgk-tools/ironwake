@@ -1126,7 +1126,7 @@ function bladeTouches(x, z, r, y0 = 0, y1 = 2) {
 function heroHits(a) {
   if (a.def.clash) return;
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul() * (a.name === 'SPIN_LOOP' ? (h.chargeMul || 1) : 1);
-  if (a.name === 'CLASH_FOLLOWUP') {
+  if (a.def.clashFollow) {
     if (a.hitDone || !boss || boss.dead) return;
     a.hitDone = true;
     damageBoss(d.dmg * mult);
@@ -1266,41 +1266,72 @@ HERO_ACTIONS.MIKIRI_L = mikiriDef('L2', 0.26);
 HERO_ACTIONS.MIKIRI_R = mikiriDef('L1', 0.26);
 HERO_ACTIONS.MIKIRI_B = mikiriDef('XCUT', 0.32);
 
-// Sword exchange after a parry: four alternating cuts that meet the boss's axe blade-on-blade
-// (no damage either way), then the boss is thrown off balance.
-const CLASH_BEAT = 0.36, CLASH_N = 4;
-HERO_ACTIONS.CLASH = (() => {
-  const keys = [];
-  for (let k = 0; k < CLASH_N; k++) {
-    const src = HERO_ACTIONS[k % 2 ? 'L2' : 'L1'], sc = CLASH_BEAT / src.dur;
-    for (const [t, p, e] of src.keys) if (t <= 0.3) keys.push([k * CLASH_BEAT + t * sc + (keys.length ? 1e-3 : 0), p, e]);
-  }
-  keys.push([CLASH_N * CLASH_BEAT + 0.3, HERO.idle, 'io']);
-  return { dur: CLASH_N * CLASH_BEAT + 0.3, keys, type: 'sweep', clash: true, clashLocked: true, active: [0, CLASH_N * CLASH_BEAT], chainAt: 99, dmg: 0, kb: 0 };
-})();
-HERO_ACTIONS.CLASH_FOLLOWUP = { ...HERO_ACTIONS.L1, clashLocked: true };
+// Sword exchange after a parry. The kind depends on the boss strike that was parried:
+//   cross (斬り合い)  four alternating cuts, blade on blade
+//   rapid (乱打)      seven quick high/low cuts
+//   low   (足元)      four low sweeps along the ground
+//   lock  (力比べ)    two overhead clashes, then the blades lock and press with a steady shower of sparks
+// No damage either way during the exchange; a single draw / win / lose roll settles it (50 / 25 / 25).
+const CLASH_TYPES = {
+  cross: { label: '斬り合い', beat: 0.36, n: 4, srcs: ['L1', 'L2'], boss: 'cleave', follow: 'CLASH_FOLLOWUP' },
+  rapid: { label: '乱打', beat: 0.22, n: 7, srcs: ['HIGHCUT', 'LOWSWEEP2', 'HIGHCUT2', 'LOWSWEEP'], boss: 'cleave', follow: 'CLASH_FOLLOWUP2' },
+  low: { label: '足元の打ち合い', beat: 0.3, n: 4, srcs: ['LOWSWEEP', 'LOWSWEEP2'], boss: 'cleave', follow: 'CLASH_FOLLOWUP3' },
+  lock: { label: '力比べ', beat: 0.5, n: 2, srcs: ['DOWNCUT'], press: 1.0, boss: 'slam', follow: 'CLASH_FOLLOWUP4', counterMul: 1.25 },
+};
+// which kinds a parried strike can lead to (the one used last time is skipped, so it never repeats)
+const CLASH_POOL = { cleave: ['cross', 'cross', 'low'], combo: ['rapid', 'cross'], slam: ['lock', 'lock', 'cross'], leap: ['lock'], charge: ['lock', 'rapid'], sweep: ['low', 'rapid'] };
+HERO_ACTIONS.CLASH_FOLLOWUP = { ...HERO_ACTIONS.L1, clashLocked: true, clashFollow: true };
+HERO_ACTIONS.CLASH_FOLLOWUP2 = { ...HERO_ACTIONS.DOWNCUT, clashLocked: true, clashFollow: true };
+HERO_ACTIONS.CLASH_FOLLOWUP3 = { ...HERO_ACTIONS.RISECUT, clashLocked: true, clashFollow: true };
+HERO_ACTIONS.CLASH_FOLLOWUP4 = { ...HERO_ACTIONS.DHEAVY, clashLocked: true, clashFollow: true };
 HERO_ACTIONS.CLASH_RECOIL = { ...HERO_ACTIONS.HURT, clashLocked: true };
-const CLASH_IMPACT = HERO_ACTIONS.L1.active.reduce((a, b) => a + b) / 2 * (CLASH_BEAT / HERO_ACTIONS.L1.dur);
+for (const T of Object.values(CLASH_TYPES)) {
+  const keys = [], impacts = [];
+  const mid = (a) => (a.active[0] + a.active[1]) / 2 / a.dur;     // where in the cut the blades meet (0..1)
+  for (let k = 0; k < T.n; k++) {
+    const src = HERO_ACTIONS[T.srcs[k % T.srcs.length]], sc = T.beat / src.dur;
+    for (const [t, p, e] of src.keys) if (t <= 0.3) keys.push([k * T.beat + t * sc + (keys.length ? 1e-3 : 0), p, e]);
+    impacts.push(k * T.beat + mid(src) * T.beat);
+  }
+  T.impactU = mid(HERO_ACTIONS[T.srcs[0]]) * T.beat;
+  T.pressFrom = T.n * T.beat;
+  let end = T.n * T.beat;
+  if (T.press) {
+    // blades locked: hold the contact pose with a slight strain, final burst just before the end
+    const P = keys[keys.length - 1][1];
+    keys.push([T.pressFrom + 0.01, P, 'lin'], [T.pressFrom + T.press * 0.5, { ...P, rootY: (P.rootY || 0) - 0.07 }, 'io'], [T.pressFrom + T.press, P, 'io']);
+    end = T.pressFrom + T.press;
+    impacts.push(end - 0.08);
+  }
+  keys.push([end + 0.3, HERO.idle, 'io']);
+  T.end = end; T.impacts = impacts;
+  T.def = { dur: end + 0.3, keys, type: 'sweep', clash: true, clashLocked: true, active: [0, end], chainAt: 99, dmg: 0, kb: 0, impacts };
+}
+const clashType = () => CLASH_TYPES[boss?.clashType] || CLASH_TYPES.cross;
 
-function startClash() {
+function startClash(from) {
   const h = hero, b = boss;
+  const name = G.clashForce || pickFrom(CLASH_POOL[from] || ['cross'], G.lastClash);
+  G.lastClash = name; b.clashType = name;
+  const T = CLASH_TYPES[name];
+  HERO_ACTIONS.CLASH = T.def;       // startAction reads the action definition by name
   startAction('CLASH');
-  h.act.beat = 0; h.iframe = HERO_ACTIONS.CLASH.dur + 0.3;
+  h.act.beat = 0; h.act.clashType = name; h.iframe = T.def.dur + 0.3;
   // swing round to face the boss side-on to the camera so both blades stay in view
   h.act.a0 = Math.atan2(h.x - b.x, h.z - b.z);
   h.act.a1 = Math.sin(h.act.a0) >= 0 ? Math.PI / 2 : -Math.PI / 2;
   h.face = Math.atan2(b.x - h.x, b.z - h.z);
   b.face = Math.atan2(h.x - b.x, h.z - b.z);
   setBoss('clash');
-  callout('鍔迫り合い', '#fff2c8');
+  callout(T.label, '#fff2c8');
 }
-// keeps both fighters squared up and fires one blade-on-blade impact per beat
+// keeps both fighters squared up and fires the blade-on-blade impacts
 function clashStep(a) {
-  const h = hero, b = boss;
-  const end = CLASH_N * CLASH_BEAT;
+  const h = hero, b = boss, T = clashType();
+  const end = T.end;
   if (b?.state === 'clashCounter') { a.t = Math.min(a.t, end); return; }
   if (!b || b.dead || b.state !== 'clash') { a.t = Math.max(a.t, end); return; }
-  if (a.beat === CLASH_N && a.t >= end) {
+  if (a.beat === T.impacts.length && a.t >= end) {
     const roll = Math.random();
     if (roll < 0.5) {
       startAction('CLASH_RECOIL');
@@ -1308,27 +1339,41 @@ function clashStep(a) {
       callout('相打ち', '#fff2c8');
     } else if (roll < 0.75) {
       h.aimNext = false;
-      startAction('CLASH_FOLLOWUP');
-      h.iframe = Math.max(h.iframe, HERO_ACTIONS.CLASH_FOLLOWUP.dur);
+      startAction(T.follow);
+      h.iframe = Math.max(h.iframe, HERO_ACTIONS[T.follow].dur);
       setBoss('parried');
-      callout('鍔迫り合い 勝利', '#fff2c8');
+      callout(`${T.label} 勝利`, '#fff2c8');
     } else {
       setBoss('clashCounter');
-      callout('鍔迫り合い 敗北', '#ffb4a0');
+      callout(`${T.label} 敗北`, '#ffb4a0');
     }
     return;
   }
-  const k = Math.min(CLASH_N - 1, Math.floor(a.t / CLASH_BEAT)), u = a.t - k * CLASH_BEAT;
-  // lean in on the cut, give ground on the recoil
-  const gap = 2.7 * bossScale() / 2.3 + (u < CLASH_IMPACT ? 0.25 - 0.4 * (u / CLASH_IMPACT) : -0.15 + 0.4 * ((u - CLASH_IMPACT) / (CLASH_BEAT - CLASH_IMPACT)));
+  // lean in on the cut, give ground on the recoil; a lock presses in and trembles
+  const base = 2.7 * bossScale() / 2.3;
+  let gap;
+  if (T.press && a.t >= T.pressFrom) {
+    const pu = Math.min(1, (a.t - T.pressFrom) / 0.3);
+    gap = base - 0.45 * pu + 0.035 * Math.sin(a.t * 45);
+  } else {
+    const k = Math.min(T.n - 1, Math.floor(a.t / T.beat)), u = a.t - k * T.beat;
+    gap = base + (u < T.impactU ? 0.25 - 0.4 * (u / T.impactU) : -0.15 + 0.4 * ((u - T.impactU) / (T.beat - T.impactU)));
+  }
   const w = Math.min(1, a.t / 0.3), ang = angLerp(a.a0, a.a1, w * w * (3 - 2 * w));
   h.x = b.x + Math.sin(ang) * gap; h.z = b.z + Math.cos(ang) * gap;
   h.face = Math.atan2(b.x - h.x, b.z - h.z); b.face = ang;
-  if (a.beat < CLASH_N && a.t >= a.beat * CLASH_BEAT + CLASH_IMPACT) {
-    const last = a.beat === CLASH_N - 1;
+  const cx = h.x + Math.sin(h.face) * 1.5, cz = h.z + Math.cos(h.face) * 1.5;
+  // locked blades: a steady shower of sparks and a low grinding clang
+  if (T.press && a.t >= T.pressFrom && a.t < T.impacts[T.impacts.length - 1] && a.t >= (a.sparkT ?? 0)) {
+    a.sparkT = a.t + 0.09; fx.spark(cx, 1.7, cz, 7);
+    if (Math.random() < 0.45) sfx.play('clang', 0.3);
+    G.shake = Math.max(G.shake, 0.22);
+  }
+  if (a.beat < T.impacts.length && a.t >= T.impacts[a.beat]) {
+    const last = a.beat === T.impacts.length - 1;
     a.beat++;
     // the meeting point: between the hero's blade and the boss, at blade height
-    const cx = h.x + Math.sin(h.face) * 1.5, cz = h.z + Math.cos(h.face) * 1.5, cy = 1.5 + 0.3 * (a.beat % 2);
+    const cy = 1.5 + 0.3 * (a.beat % 2);
     fx.hitFlash(cx, cy, cz, true, false); fx.spark(cx, cy, cz, last ? 50 : 26);
     if (last) { fx.hitFlash(cx, cy, cz, true, false); fx.ring(cx, cz, 3.4, 0xfff0c0, 0.45); }
     sfx.play(last ? 'parry' : 'clang', last ? 1 : 0.9);
@@ -1390,7 +1435,7 @@ function mikiriMove(a) {
 
 function tryParry() {
   const h = hero, a = h.act, b = boss;
-  if (!a || !a.def.type || NO_PARRY.has(a.name) || G.time - a.startT > PARRY_WIN) return false;
+  if (!a || !a.def.type || NO_PARRY.has(a.name) || a.def.clashLocked || G.time - a.startT > PARRY_WIN) return false;
   // a landing leap comes down on top of the hero: judge facing against where it jumped from
   const ox = b.state === 'leap' ? b.lx : b.x, oz = b.state === 'leap' ? b.lz : b.z;
   const toB = Math.atan2(ox - h.x, oz - h.z);
@@ -1401,9 +1446,10 @@ function tryParry() {
   sfx.play('parry');
   G.hitstop = Math.max(G.hitstop, 0.16); G.slowmo = Math.min(G.slowmo, 0.35); G.shake = Math.max(G.shake, 0.75);
   h.rage = Math.min(100, h.rage + 12); h.iframe = Math.max(h.iframe, 0.25);
+  const from = b.state;
   b.tele = false; b.poise = 0; b.y = 0;
   G.parries = (G.parries || 0) + 1;
-  startClash();
+  startClash(from);
   return true;
 }
 // every boss strike goes through here: a parry cancels it, otherwise it hurts if it connects
@@ -1561,7 +1607,7 @@ function updateBoss(dt) {
       const counter = b.state === 'clashCounter';
       if (!b.hitDone && b.t > (counter ? 0.24 : 0.12)) {
         b.hitDone = true; sfx.play('swingHeavy');
-        const damage = 160 * b.dmgMul;
+        const damage = 160 * b.dmgMul * (counter ? (CLASH_TYPES[b.clashType]?.counterMul || 1) : 1);
         if (counter) {
           hero.iframe = 0;
           hurtHero(damage, b.x, b.z);
@@ -1683,12 +1729,19 @@ function updateBoss(dt) {
   else if (ps === 'parried') { ps = 'stagger'; tt = b.t / 1.9; }
   else if (ps === 'clashRecoil') { ps = 'stagger'; tt = b.t / (HERO_ACTIONS.HURT.dur * b.speed); }
   else if (ps === 'clashCounter') {
-    if (b.t < 0.12) { ps = 'cleaveWind'; tt = 0.6 + b.t / 0.3; }
-    else { ps = 'cleave'; tt = (b.t - 0.12) / 0.3; }
+    const slam = clashType().boss === 'slam';
+    if (b.t < 0.12) { ps = slam ? 'slamWind' : 'cleaveWind'; tt = slam ? 0.5 + b.t / 0.24 : 0.6 + b.t / 0.3; }
+    else { ps = slam ? 'slam' : 'cleave'; tt = slam ? Math.min(1, (b.t - 0.12) / 0.12) : (b.t - 0.12) / 0.3; }
   }
   else if (ps === 'clash') {
-    const at = hero.act?.name === 'CLASH' ? hero.act.t : 0, k = Math.floor(at / CLASH_BEAT), u = at - k * CLASH_BEAT;
-    if (u < CLASH_IMPACT - 0.04) { ps = 'cleaveWind'; tt = 0.6 + 0.4 * u / (CLASH_IMPACT - 0.04); } else { ps = 'cleave'; tt = 0.35 * (u - CLASH_IMPACT + 0.04) / (CLASH_BEAT - CLASH_IMPACT); }
+    const T = clashType(), slam = T.boss === 'slam';
+    const at = hero.act?.name === 'CLASH' ? hero.act.t : 0;
+    if (T.press && at >= T.pressFrom) { ps = 'slam'; tt = 1; }   // locked: the axe pressed down against the blade
+    else {
+      const k = Math.floor(at / T.beat), u = at - k * T.beat, lead = T.impactU - 0.04;
+      if (u < lead) { ps = slam ? 'slamWind' : 'cleaveWind'; tt = 0.6 + 0.4 * u / lead; }
+      else { ps = slam ? 'slam' : 'cleave'; tt = slam ? Math.min(1, (u - lead) / 0.12) : 0.35 * (u - lead) / (T.beat - T.impactU); }
+    }
   }
   else tt = { cleaveWind: b.t / 0.85, cleave: b.t / 0.3, slamWind: b.t / 0.9, slam: b.t / 0.18, chargeWind: b.t / 0.6, roar: b.t / 2.2, stagger: b.t / 1.6, dead: b.t / 1.4 }[b.state] ?? b.t;
   bossPose(ps, tt, b.phase, b.target);
@@ -2060,7 +2113,7 @@ async function boot() {
     sel.addEventListener('change', () => { const pick = hero.weapons[sel.value] || hero.weapons.standard; for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick; }); }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, CLASH_TYPES };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));
