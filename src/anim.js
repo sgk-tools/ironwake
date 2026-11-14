@@ -608,3 +608,18 @@ HERO_ACTIONS.HIGHCUT2 = { ...HERO_ACTIONS.L1, dmg: 24, keys: withEnd(cut('HIGH_L
 HERO_ACTIONS.DOWNCUT = { ...HERO_ACTIONS.CROSS, dmg: 30, kb: 5, keys: withEnd(cut('TOP_DOWN'), 0.52) };
 HERO_ACTIONS.RISECUT = { ...HERO_ACTIONS.L1B, dmg: 26, up: 6, keys: withEnd(cut('RISE'), 0.52) };
 HERO_ACTIONS.LOWSWEEP2 = { ...HERO_ACTIONS.LOWSWEEP, keys: withEnd(cut('LOW_SWEEP_L2R'), 0.55) };
+
+// ======================================================================= button combinations
+// 連撃(2段以上)→回避: step back (invulnerable like a dodge) and cut across on the way out.
+HERO_ACTIONS.BSTEP = {
+  dur: 0.82, active: [0.42, 0.56], chainAt: 0.74, dmg: 30, kb: 6, iframes: [0, 0.3], lunge: [0.0, 0.26, -5], sound: 'swing', type: 'sweep',
+  keys: [
+    [0, HERO.idle],
+    [0.08, HERO_ACTIONS.DODGE.keys[1][1], 'out'],
+    [0.22, HERO_ACTIONS.DODGE.keys[2][1]],
+    ...cut('L2R', 0.3),
+    [0.82, HERO.idle, 'io'],
+  ],
+};
+// 回避→重: the heavy pressed during a dodge comes out as a rising crush right after it
+HERO_ACTIONS.DHEAVY = { ...HERO_ACTIONS.UPPER, dmg: 38, kb: 5, up: 8, lunge: [0.02, 0.22, 4] };

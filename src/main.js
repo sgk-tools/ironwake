@@ -686,6 +686,7 @@ function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
   if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
   h.act = { name, t: 0, def, hitDone: false, swung: false, startT: G.time };
+  if (LINK_MOVES.has(name)) noteLink();
   { const [fx_, fy_] = input.move(); h.flowAng = Math.hypot(fx_, fy_) > 0.3 ? Math.atan2(-fx_, fy_) : null; h.faceTo = null; }
   h.attackId++;
   const aim = h.aimNext !== false; h.aimNext = true;
@@ -700,6 +701,7 @@ function startAction(name) {
       if (best) h.face = Math.atan2(best.x - h.x, best.z - h.z);
     }
   }
+  if (name === 'BSTEP') { h.iframe = def.iframes[1]; sfx.play('dodge'); }   // back-step cut: invulnerable like a dodge
   if (name === 'DODGE') {
     const [mx, my] = input.move();
     if (Math.hypot(mx, my) > 0.2) h.face = Math.atan2(-mx, my);
@@ -748,9 +750,18 @@ function pickLight(prev, dir = readDir()) {
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
   return pickFrom(chain[hero.comboIdx], prev);
 }
+// Button variety. A light cut that follows a direction, a heavy or a dodge is a "link": it restores full
+// damage. Plain 斬 repeated with no link (held or tapped) loses power from the 4th cut on
+// (enemies x0.5, the boss x0.2) and, at the cap, the pause grows from 0.22 s to 0.6 s.
+const LINK_MOVES = new Set(['CHARGE', 'DODGE', 'BSTEP', 'DHEAVY']);
+const MONO_FREE = 3, MONO_ENEMY = 0.5, MONO_BOSS = 0.2, MONO_RECOVERY = 0.6;
+const noteLink = () => { hero.monoRun = 0; };
+const monoFactor = (a, isBoss) => (a?.light && (a.mono || 0) > MONO_FREE) ? (isBoss ? MONO_BOSS : MONO_ENEMY) : 1;
 function startLight(prev, dir) {
+  if (dir) noteLink(); else hero.monoRun = (hero.monoRun || 0) + 1;
   startAction(pickLight(prev, dir));
   hero.act.light = true;
+  hero.act.mono = hero.monoRun;
 }
 
 // heavy after N light hits (N = 1..5): launcher, crushing slam, double whirl, thrust barrage, leaping slam
@@ -767,7 +778,10 @@ const DODGE_START = [0.12, 0.09, 0.06, 0.03, 0];
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + POWER_PER_RANK * (hero.stats.power - 1);
 const maxHealth = () => 1000 + HEALTH_PER_RANK * (hero.stats.health - 1);
-const lightLimit = () => hero.stats.technique === STAT_MAX ? Infinity : hero.stats.technique + 2;
+// combo length per technique rank. Rank 5 used to be unlimited (hold attack = never stops); every rank now
+// stops at its cap, so a longer string needs the heavy / dodge / direction links below.
+const LIGHT_CAP = [0, 3, 4, 5, 6, 9];
+const lightLimit = () => LIGHT_CAP[hero.stats.technique] ?? 3;
 
 function loadStats(saved) {
   return Object.fromEntries(STAT_KEYS.map(key => {
@@ -885,8 +899,9 @@ function tryFlow() {
   if (sense && h.flowRun >= 3) { name = pickFrom(FLOW_SPIN[sense], a.name); h.flowRun = 0; }
   else name = pickFrom(FLOW[bucket], a.name);
   h.aimNext = false;
+  noteLink();   // a direction change is a link: this cut and the next hits are at full power
   startAction(name);
-  h.act.light = true; h.act.flowed = true; h.act.bucket = bucket;
+  h.act.light = true; h.act.flowed = true; h.act.bucket = bucket; h.act.mono = 0;
   // the blade is already moving: skip most of the wind-up
   if (!TURN_AXIS[name]) h.act.t = Math.min(0.07, h.act.def.active[0] * 0.6);
   h.faceTo = ang; h.flowAng = ang;
@@ -930,6 +945,9 @@ function updateHero(dt) {
   if (mk) startMikiri(mk);
   else if (locked) { /* ignore input */ }
   else if (!wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
+  else if (wantDodge && act && act.light && act.def.type && act.t > (act.def.active?.[1] ?? 0) && h.lightCount >= 2 && !holdingTurn) {
+    h.aimNext = false; startAction('BSTEP');   // two or more cuts in, then dodge: back-step cut
+  }
   else if (wantDodge && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge === STAT_MAX || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) startAction('DODGE');
   else if (!act) {
@@ -942,6 +960,7 @@ function updateHero(dt) {
     }
   } else if (act.name === 'DODGE') {
     if (wantAttack) act.queued = 'counter';  // attack during a roll: turning counter-cut on recovery
+    if (wantHeavy) act.queued = 'dheavy';    // heavy during a roll: rising crush on recovery
   } else if (!act.def.type) {
     // hurt (or any other state that takes no orders): hold on to the presses until it ends
     if (wantAttack && act.name !== 'CHARGE') input.pressed.add('attack');
@@ -1011,15 +1030,16 @@ function updateHero(dt) {
         // heavy mid-combo: a finisher that depends on how many light hits came before
         const n = h.lightCount || 0;
         if (n <= 0) { h.charge = 0; h.chargeLv = 0; startAction('CHARGE'); }
-        else { startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
+        else { noteLink(); startAction(pickFrom(FINISHERS[Math.min(n, 5)], null)); h.lightCount = 0; }
       } else {
         if (!a.light) h.lightCount = 0;
         startLight(a.name, a.queuedDir);
       }
-    } else if (a.t >= d.dur && a.queued === 'counter') {
-      h.lightCount = 1; h.comboIdx = 0; startAction('L4'); h.act.light = true;
+    } else if (a.t >= d.dur && (a.queued === 'counter' || a.queued === 'dheavy')) {
+      if (a.queued === 'dheavy') startAction('DHEAVY');
+      else { h.lightCount = 1; h.comboIdx = 0; startAction('L4'); h.act.light = true; }
     } else if (a.t >= d.dur) {
-      if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
+      if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = (h.monoRun || 0) >= MONO_FREE ? MONO_RECOVERY : LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
       // smoothing does not unwind them backwards
@@ -1125,17 +1145,17 @@ function heroHits(a) {
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
     const def = ENEMY[e.type];
-    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult, knockback, d.up || 0, true, undefined, undefined, bonusLift); continue; }
+    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, true, undefined, undefined, bonusLift); continue; }
     if (bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
-      damageEnemy(e, d.dmg * mult, knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
+      damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && (boss.y || 0) < 1.5 && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, bossRadius() + (d.mikiri ? 0.6 : 0), 0, 4)) {
     boss.lastHit = h.attackId; any = true;
     // a staggered or parried boss takes extra damage; the evade-cut hits hardest and staggers
     const open = boss.state === 'parried' || boss.state === 'stagger';
-    damageBoss(d.dmg * mult * (d.mikiri ? 2.5 : open ? 1.5 : 1.0));
+    damageBoss(d.dmg * mult * (d.mikiri ? 2.5 : open ? 1.5 : 1.0) * monoFactor(a, true));
     if (d.mikiri && !boss.dead) {
       setBoss('stagger'); boss.poise = 0; G.mikiriHits = (G.mikiriHits || 0) + 1;
       G.hitstop = Math.max(G.hitstop, 0.12); G.slowmo = Math.min(G.slowmo, 0.3); G.shake = Math.max(G.shake, 0.7);
@@ -2040,7 +2060,7 @@ async function boot() {
     sel.addEventListener('change', () => { const pick = hero.weapons[sel.value] || hero.weapons.standard; for (const w of Object.values(hero.weapons)) w.mesh.visible = w === pick; }); }
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE };
 }
 
 UI.start.addEventListener('click', () => startGame(0, 1, 0));

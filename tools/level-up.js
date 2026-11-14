@@ -119,7 +119,8 @@ async function run() {
         requestAnimationFrame(tick);
       }), rank);
       assert.equal(chain.hits, rank === 5 ? 9 : rank + 2);
-      assert.equal(chain.recovery > 0, rank < 5);
+      // every rank now stops at its cap (rank 5 used to be unlimited); a plain-斬 string gets the long 0.6 s pause
+      assert.equal(chain.recovery > 0.5, true);
     }
     console.log('Held attack chains at all five technique ranks passed');
 
@@ -159,7 +160,8 @@ async function run() {
       const hits = rank === 5 ? 9 : rank + 2;
       assert.equal(chain.hits, hits);
       assert.equal(chain.redirects, hits - 1);
-      assert.equal(chain.recovery > 0, rank < 5);
+      // direction changes are links, so this string ends with the normal short pause; it still stops at the cap
+      assert.equal(chain.recovery > 0, true);
     }
     console.log('Flow redirects count toward all five technique ranks and stop at the cap');
 
