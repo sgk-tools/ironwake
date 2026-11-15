@@ -1157,7 +1157,10 @@ function updateHero(dt) {
     h.rage = 0; h.rageT = awakeningDuration(); startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
   const attackPressed = input.consume('attack');
-  if (attackPressed) h.lastSlashPress = G.time;
+  if (attackPressed) {
+    h.lastSlashPress = G.time;
+    h.slashFacing = h.face;
+  }
   // one press = one attack: holding the button does nothing more (the heavy keeps its hold-to-charge)
   const wantAttack = attackPressed;
   const heavyPressed = input.consume('heavy');
@@ -1169,10 +1172,7 @@ function updateHero(dt) {
   const act = h.act;
   const sliding = finishingDodgeCut(act);
   const cutDirection = attackPressed ? readCutDirection() : null;
-  // boss fight: side/back + attack just before a boss strike = evade-cut (checked before everything else)
-  const mk = !locked && !sliding && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
-  if (mk) startMikiri(mk);
-  else if (locked) {
+  if (locked) {
     if (act.name === 'CLASH' && attackPressed) {
       const direction = readDir();
       if (direction) act.nextPattern = CLASH_PATTERNS[direction];
@@ -1232,7 +1232,6 @@ function updateHero(dt) {
     a.t += dt * (d.type ? speedK : 1);
     if (a.dodgeTime != null) a.dodgeTime += dt;
     sampleKeys(d.keys, a.t, h.target);
-    if (d.mikiri) mikiriMove(a);
     if (d.clash) clashStep(a);
     if (dodgeTime < DODGE_MOVE_END) {
       const reaction = dodgeReaction();
@@ -1395,18 +1394,12 @@ function heroHits(a) {
       damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
     }
   }
-  if (boss && !boss.dead && boss.state !== 'hidden' && (boss.y || 0) < 1.5 && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, bossRadius() + (d.mikiri ? 0.6 : 0), 0, 4)) {
+  if (boss && !boss.dead && boss.state !== 'hidden' && (boss.y || 0) < 1.5 && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, bossRadius(), 0, 4)) {
     boss.lastHit = h.attackId; any = true;
-    // a staggered or parried boss takes extra damage; the evade-cut hits hardest and staggers
+    // A staggered or parried boss takes extra damage.
     const open = boss.state === 'parried' || boss.state === 'stagger';
-    const stop = d.heavy || d.mikiri ? 0.13 : d.multi || turn ? 0.065 : 0.095;
-    damageBoss(d.dmg * mult * (d.mikiri ? 2.5 : open ? 1.5 : 1.0) * monoFactor(a, true), stop);
-    if (d.mikiri && !boss.dead) {
-      setBoss('stagger'); boss.poise = 0; G.mikiriHits = (G.mikiriHits || 0) + 1;
-      G.hitstop = Math.max(G.hitstop, 0.12); G.slowmo = Math.min(G.slowmo, 0.3); G.shake = Math.max(G.shake, 0.7);
-      fx.hitFlash(boss.x, 2.2 * bossScale() / 2.3, boss.z, true, true); fx.spark(boss.x, 2, boss.z, 30);
-      callout('見切り', '#ffd27a');
-    }
+    const stop = d.heavy ? 0.13 : d.multi || turn ? 0.065 : 0.095;
+    damageBoss(d.dmg * mult * (open ? 1.5 : 1.0) * monoFactor(a, true), stop);
   }
   if (any) { G.hitstop = Math.max(G.hitstop, (a.name === 'SPIN_LOOP' || a.name === 'RSPIN2' || a.name === 'SPIN1' || a.name === 'L4') ? 0.025 : 0.055); sfx.play('hit'); }
 }
@@ -1488,32 +1481,14 @@ function hurtHero(dmg, fromX, fromZ) {
   if (h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) startAction('HURT');
 }
 
-// ======================================================================= parry + evade-cut (boss fights)
-// Parry: a slash started within PARRY_WIN seconds before a boss strike lands, facing the boss, knocks the
-// strike aside and starts a sword exchange. The boss's weapon glints GLINT_AT seconds before
-// each strike as the cue.
-// Evade-cut: side or back + attack within MIKIRI_WIN seconds before a strike = an invulnerable step around
-// (side) or back-and-in (back) followed by a heavy cut that staggers the boss.
-const PARRY_WIN = 0.4, DISARM_WIN = 0.075, GLINT_AT = 0.55, MIKIRI_WIN = 0.5;
-const NO_PARRY = new Set(['CHARGE', 'HURT', 'DODGE', 'RAGE', 'DEATH', 'MIKIRI_L', 'MIKIRI_R', 'MIKIRI_B', 'CLASH', 'CLASH_FOLLOWUP']);
+// ======================================================================= boss parry and disarm
+const PARRY_WIN = 0.4, DISARM_WIN = 0.035, GLINT_AT = 0.55;
+const NO_PARRY = new Set(['CHARGE', 'HURT', 'DODGE', 'RAGE', 'DEATH']);
 const bossScale = () => boss?.scale || 2.3;
 const bossRadius = () => 1.2 * bossScale() / 2.3;
 
-function mikiriDef(base, lead) {
-  const b = HERO_ACTIONS[base];
-  return {
-    ...b, mikiri: true, lunge: undefined, multi: false, lead,
-    dur: b.dur + lead, active: [b.active[0] + lead, b.active[1] + lead], chainAt: b.dur + lead,
-    dmg: 64, kb: 7, iframes: [0, lead + 0.35],
-    keys: [[0, HERO_ACTIONS.DODGE.keys[1]?.[1] || b.keys[0][1]], [lead * 0.85, b.keys[0][1], 'out'], ...b.keys.slice(1).map(([t, p, e]) => [t + lead, p, e])],
-  };
-}
-HERO_ACTIONS.MIKIRI_L = mikiriDef('L2', 0.26);
-HERO_ACTIONS.MIKIRI_R = mikiriDef('L1', 0.26);
-HERO_ACTIONS.MIKIRI_B = mikiriDef('XCUT', 0.32);
-
-// A clash has four weapon contacts. Direction plus a fresh slash selects the next cut pattern.
-const CLASH_BEAT = 0.36, CLASH_N = 4, CLASH_IMPACT = 0.145;
+// Direction plus a fresh slash selects the next cut pattern.
+const CLASH_BEAT = 0.36, CLASH_MIN = 3, CLASH_MAX = 7, CLASH_IMPACT = 0.145;
 const CLASH_PATTERNS = {
   fwd: ['DASH', 'L1', 'STAB', 'L2'],
   back: ['UPPER', 'DOWNCUT', 'RISECUT', 'L2'],
@@ -1523,8 +1498,7 @@ const CLASH_PATTERNS = {
 const CLASH_OPENING = { charge: 'fwd', cleave: 'left', combo: 'left', leap: 'back', slam: 'back', sweep: 'right' };
 const CLASH_VERTICAL = new Set(['UPPER', 'DOWNCUT', 'RISECUT', 'HIGHCUT', 'HIGHCUT2']);
 HERO_ACTIONS.CLASH = {
-  dur: CLASH_N * CLASH_BEAT + 0.3, keys: [[0, HERO.idle]], type: 'sweep', clash: true,
-  clashLocked: true, active: [0, CLASH_N * CLASH_BEAT], chainAt: 99, dmg: 0, kb: 0,
+  keys: [[0, HERO.idle]], type: 'sweep', clash: true, clashLocked: true, chainAt: 99, dmg: 0, kb: 0,
 };
 HERO_ACTIONS.CLASH_FOLLOWUP = { ...HERO_ACTIONS.L1, clashLocked: true, clashHit: true };
 HERO_ACTIONS.CLASH_DISARM = { ...HERO_ACTIONS.L1, clashLocked: true, clashHit: true, dmg: HERO_ACTIONS.L1.dmg * 1.75 };
@@ -1543,7 +1517,12 @@ function startClash() {
   startAction('CLASH');
   h.act.pattern = CLASH_PATTERNS[CLASH_OPENING[b.state] || 'left'];
   h.act.patternStart = 0;
-  h.act.beat = 0; h.iframe = HERO_ACTIONS.CLASH.dur + 0.3;
+  const count = CLASH_MIN + Math.floor(Math.random() * (CLASH_MAX - CLASH_MIN + 1));
+  const end = count * CLASH_BEAT;
+  h.act.def = { ...h.act.def, dur: end + 0.3, active: [0, end] };
+  h.act.beat = 0;
+  h.act.contacts = count;
+  h.iframe = h.act.def.dur + 0.3;
   // swing round to face the boss side-on to the camera so both blades stay in view
   h.act.a0 = Math.atan2(h.x - b.x, h.z - b.z);
   h.act.a1 = Math.sin(h.act.a0) >= 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -1567,10 +1546,10 @@ function clashCollateral(fighter, reach, vertical) {
 
 function clashStep(a) {
   const h = hero, b = boss;
-  const end = CLASH_N * CLASH_BEAT;
+  const end = a.def.active[1];
   if (b?.state === 'clashCounter') { a.t = Math.min(a.t, end); return; }
   if (!b || b.dead || b.state !== 'clash') { a.t = Math.max(a.t, end); return; }
-  if (a.beat === CLASH_N && a.t >= end) {
+  if (a.beat === a.contacts && a.t >= end) {
     const roll = Math.random();
     if (roll < 0.5) {
       startAction('CLASH_RECOIL');
@@ -1582,13 +1561,13 @@ function clashStep(a) {
     }
     return;
   }
-  const k = Math.min(CLASH_N - 1, Math.floor(a.t / CLASH_BEAT)), u = a.t - k * CLASH_BEAT;
+  const k = Math.min(a.contacts - 1, Math.floor(a.t / CLASH_BEAT)), u = a.t - k * CLASH_BEAT;
   if (a.nextPattern && a.beat === k) {
     a.pattern = a.nextPattern;
     a.patternStart = k;
     a.nextPattern = null;
   }
-  a.cut = a.pattern[k - a.patternStart];
+  a.cut = a.pattern[(k - a.patternStart) % a.pattern.length];
   const cut = HERO_ACTIONS[a.cut];
   const contact = (cut.active[0] + cut.active[1]) / 2;
   const poseTime = u < CLASH_IMPACT ? contact * u / CLASH_IMPACT
@@ -1599,8 +1578,8 @@ function clashStep(a) {
   const w = Math.min(1, a.t / 0.3), ang = angLerp(a.a0, a.a1, w * w * (3 - 2 * w));
   h.x = b.x + Math.sin(ang) * gap; h.z = b.z + Math.cos(ang) * gap;
   h.face = Math.atan2(b.x - h.x, b.z - h.z); b.face = ang;
-  if (a.beat < CLASH_N && a.t >= a.beat * CLASH_BEAT + CLASH_IMPACT) {
-    const last = a.beat === CLASH_N - 1;
+  if (a.beat < a.contacts && a.t >= a.beat * CLASH_BEAT + CLASH_IMPACT) {
+    const last = a.beat === a.contacts - 1;
     a.beat++;
     // the meeting point: between the hero's blade and the boss, at blade height
     const cx = h.x + Math.sin(h.face) * 1.5, cz = h.z + Math.cos(h.face) * 1.5;
@@ -1616,57 +1595,6 @@ function clashStep(a) {
   }
 }
 
-// side or back relative to the hero->boss line, only while a boss strike is about to land
-function mikiriDir() {
-  const b = boss;
-  if (!b || b.dead || b.state === 'hidden' || b.strikeIn == null || b.strikeIn > MIKIRI_WIN || b.strikeIn < -0.05) return null;
-  const h = hero, dist = Math.hypot(b.x - h.x, b.z - h.z);
-  if (dist > 9) return null;
-  const [mx, my] = input.move();
-  if (Math.hypot(mx, my) < 0.3) return null;
-  const toB = Math.atan2(b.x - h.x, b.z - h.z);
-  const rel = angLerp(toB, Math.atan2(-mx, my), 1) - toB;
-  if (Math.abs(rel) > 2.3) return 'B';
-  if (Math.abs(rel) > 0.8) return rel < 0 ? 'R' : 'L';
-  return null;
-}
-function startMikiri(dir) {
-  const h = hero, b = boss;
-  startAction('MIKIRI_' + dir);
-  const d = h.act.def;
-  h.iframe = d.iframes[1];
-  const [mx, my] = input.move();
-  const leap = b.state === 'leap' || b.state === 'leapWind';
-  // a charging boss overruns and pulls up on the spot the hero just left: the cut is aimed there
-  const charge = b.state === 'charge' || b.state === 'chargeWind';
-  if (charge) { b.stopX = h.x; b.stopZ = h.z; }
-  const fixed = leap || charge;
-  const cx = leap ? b.tx : charge ? h.x : b.x, cz = leap ? b.tz : charge ? h.z : b.z;
-  h.mk = { dir, cx: fixed ? cx : undefined, cz: fixed ? cz : undefined, a0: Math.atan2(h.x - cx, h.z - cz), d0: Math.max(0.5, Math.hypot(h.x - cx, h.z - cz)), mx: -mx, mz: my };
-  // pick the way round the boss that matches the stick
-  if (dir !== 'B') {
-    const r = h.mk.d0, a1 = h.mk.a0 + 0.5, px = Math.sin(a1) * r - Math.sin(h.mk.a0) * r, pz = Math.cos(a1) * r - Math.cos(h.mk.a0) * r;
-    h.mk.sign = (px * h.mk.mx + pz * h.mk.mz) >= 0 ? 1 : -1;
-  }
-  G.slowmo = Math.min(G.slowmo, 0.45); G.mikiris = (G.mikiris || 0) + 1;
-  sfx.play('dodge'); fx.ring(h.x, h.z, 1.6, 0xd0e0ff, 0.3);
-}
-// scripted footwork during the lead-in (boss-relative so it tracks a moving boss)
-function mikiriMove(a) {
-  const h = hero, b = boss, m = h.mk, lead = a.def.lead;
-  if (!b || !m || a.t > lead) { if (b && !b.dead) h.face = angLerp(h.face, Math.atan2(b.x - h.x, b.z - h.z), 0.5); return; }
-  const u = Math.min(1, a.t / lead), e = 1 - (1 - u) * (1 - u);
-  // a leaping boss is dodged around its landing point
-  const near = 2.4 * bossScale() / 2.3 + 0.3;
-  let ang = m.a0, r;
-  if (m.dir === 'B') r = u < 0.5 ? m.d0 + (2.2) * (u / 0.5) : (m.d0 + 2.2) + (near - m.d0 - 2.2) * ((u - 0.5) / 0.5) ** 2;
-  else { ang = m.a0 + m.sign * 1.35 * e; r = m.d0 + (near - m.d0) * e; }
-  const cx = m.cx ?? b.x, cz = m.cz ?? b.z;
-  h.x = cx + Math.sin(ang) * r; h.z = cz + Math.cos(ang) * r;
-  h.face = Math.atan2(cx - h.x, cz - h.z);
-  if (Math.random() < 0.6) fx.ember(h.x, 0.1, h.z);
-}
-
 function startDisarm() {
   const h = hero, b = boss;
   const mesh = b.axe.clone();
@@ -1678,7 +1606,11 @@ function startDisarm() {
   b.droppedAxe = { mesh, vx: Math.sin(side) * 4.6, vz: Math.cos(side) * 4.6, vy: 2.2 };
   b.axe.visible = false;
   scene.add(mesh);
-  fx.spark(mesh.position.x, mesh.position.y, mesh.position.z, 32);
+  const { x, y, z } = mesh.position;
+  fx.hitFlash(x, y, z, true, true);
+  fx.spark(x, y, z, 60);
+  fx.ring(x, z, 3.6, 0x78e1ff, 0.5);
+  G.hitstop = Math.max(G.hitstop, 0.21);
   const gap = 2.5 * bossScale() / 2.3;
   h.x = b.x + Math.sin(angle) * gap;
   h.z = b.z + Math.cos(angle) * gap;
@@ -1692,13 +1624,22 @@ function updateDroppedAxe(b, dt) {
   if (!drop) return;
   const { mesh } = drop;
   if (mesh.position.y <= 0.32 && drop.vy <= 0) return;
+  if (Math.random() < Math.min(1, dt * 24)) {
+    fx.spark(mesh.position.x, mesh.position.y, mesh.position.z, 3);
+  }
   drop.vy -= 17 * dt;
   mesh.position.x += drop.vx * dt;
   mesh.position.z += drop.vz * dt;
   mesh.position.y = Math.max(0.32, mesh.position.y + drop.vy * dt);
   mesh.rotateX(7 * dt);
   mesh.rotateZ(3 * dt);
-  if (mesh.position.y === 0.32) mesh.rotation.set(Math.PI / 2, mesh.rotation.y, 0);
+  if (mesh.position.y === 0.32) {
+    mesh.rotation.set(Math.PI / 2, mesh.rotation.y, 0);
+    fx.hitFlash(mesh.position.x, 0.35, mesh.position.z);
+    fx.spark(mesh.position.x, 0.35, mesh.position.z, 24);
+    fx.ring(mesh.position.x, mesh.position.z, 2.1, 0x78e1ff, 0.38);
+    sfx.play('clang', 0.8);
+  }
 }
 
 function restoreBossAxe(b) {
@@ -1714,7 +1655,11 @@ function tryParry() {
   // a landing leap comes down on top of the hero: judge facing against where it jumped from
   const ox = b.state === 'leap' ? b.lx : b.x, oz = b.state === 'leap' ? b.lz : b.z;
   const toB = Math.atan2(ox - h.x, oz - h.z);
-  if (Math.hypot(ox - h.x, oz - h.z) > 0.3 && Math.abs(angLerp(h.face, toB, 1) - h.face) > 1.3) return false;
+  const precise = G.time - (h.lastSlashPress ?? -Infinity) <= DISARM_WIN;
+  // A direction held with the precise press may turn the slash away from its original facing.
+  const facesBoss = face => Math.abs(angLerp(face, toB, 1) - face) <= 1.3;
+  if (Math.hypot(ox - h.x, oz - h.z) > 0.3 && !facesBoss(h.face)
+      && !(precise && facesBoss(h.slashFacing))) return false;
   const cx = (b.x + h.x) / 2, cz = (b.z + h.z) / 2;
   fx.hitFlash(cx, 1.9, cz, true, false); fx.hitFlash(cx, 1.9, cz, true, false);
   fx.spark(cx, 1.9, cz, 44); fx.ring(cx, cz, 3.2, 0xfff0c0, 0.4); fx.ring(b.x, b.z, 5, 0xffd080, 0.6);
@@ -1723,7 +1668,7 @@ function tryParry() {
   gainRage(12); h.iframe = Math.max(h.iframe, 0.25);
   b.tele = false; b.poise = 0; b.y = 0;
   G.parries = (G.parries || 0) + 1;
-  if (G.time - (h.lastSlashPress ?? -Infinity) <= DISARM_WIN) startDisarm();
+  if (precise) startDisarm();
   else startClash();
   return true;
 }
@@ -1932,7 +1877,6 @@ function updateBoss(dt) {
       break;
     }
     case 'leapLand': if (b.t > 1.1) setBoss('walk', 1 + Math.random()); break;
-    case 'chargeStop': if (b.t > 0.9) setBoss('walk', 0.8); break;
     // full-circle sweep around the boss
     case 'sweepWind':
       turn(2);
@@ -1977,7 +1921,6 @@ function updateBoss(dt) {
     case 'chargeWind': turn(5); if (b.t > 0.7) { setBoss('charge'); sfx.play('roar', 0.5); } break;
     case 'charge':
       b.x += Math.sin(b.face) * 15 * dt; b.z += Math.cos(b.face) * 15 * dt; b.phase += dt * 12;
-      if (b.stopX != null && (b.stopX - b.x) * Math.sin(b.face) + (b.stopZ - b.z) * Math.cos(b.face) <= 0) { setBoss('chargeStop'); break; }
       if (!b.hitDone && dist < 2.3 * sk) { b.hitDone = true; if (bossStrike(140 * b.dmgMul, true, b.x, b.z)) break; }
       for (const e of enemies) if (!e.dead && Math.hypot(e.x - b.x, e.z - b.z) < 2) { e.vx += Math.sin(b.face) * 6; e.vz += Math.cos(b.face) * 6; }
       if (b.t > 0.95 || Math.hypot(b.x, b.z) > ARENA) setBoss('walk', 1.2);
@@ -2004,7 +1947,6 @@ function updateBoss(dt) {
   else if (ps === 'leapWind') { ps = 'chargeWind'; tt = b.t / 0.6; }
   else if (ps === 'leap') { const u = b.t / 0.9; if (u < 0.7) { ps = 'slamWind'; tt = u / 0.5; } else { ps = 'slam'; tt = (u - 0.7) / 0.3; } }
   else if (ps === 'leapLand') { ps = 'slam'; tt = 1; }
-  else if (ps === 'chargeStop') { ps = 'chargeWind'; tt = 1; }
   else if (ps === 'parried') { ps = 'stagger'; tt = b.t / 1.9; }
   else if (ps === 'clashRecoil') { ps = 'stagger'; tt = b.t / (HERO_ACTIONS.HURT.dur * b.speed); }
   else if (ps === 'clashCounter') {
@@ -2034,7 +1976,6 @@ function setBoss(s, cd) {
   boss.state = s; boss.t = 0; boss.hitDone = false; if (cd !== undefined) boss.cd = cd;
   if (s.endsWith('Wind')) boss.glinted = false;
   if (s !== 'leap') boss.y = 0;
-  if (s === 'chargeWind' || s === 'walk') boss.stopX = boss.stopZ = null;
 }
 // seconds (game time) until the boss's next strike lands, or null when no strike is coming
 function strikeEta(b, dist) {
@@ -2114,7 +2055,7 @@ function spawnBoss() {
   setBoss('roar'); boss.cd = 2; boss.rig.root.visible = true;
   setTimeout(() => sfx.play('roar'), 400);
   UI.bossBar.hidden = false;
-  { const k = window.matchMedia?.('(pointer: fine)').matches ? 'J' : '斬'; showTip(`武器が光ったら ${k} で弾く ／ 横・後ろ＋${k} で見切り ／ 打ち合い中は方向＋${k} で派生`); }
+  { const k = window.matchMedia?.('(pointer: fine)').matches ? 'J' : '斬'; showTip(`武器が光ったら ${k} で弾く ／ 命中寸前の${k}で武器を落とす ／ 打ち合い中は方向＋${k} で派生`); }
 }
 
 function updateWaves(dt) {
@@ -2544,7 +2485,7 @@ async function boot() {
   setupBossBattle();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS };
 }
 
 $('.difficulty-choice').addEventListener('change', refreshContinue);
