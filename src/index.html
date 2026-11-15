@@ -148,9 +148,13 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 #tutorial-steps { margin: 5px 0 0; padding-inline-start: 1.5em; font-size: 13px; line-height: 1.4; }
 #tutorial-steps li { padding: 3px 5px; border-radius: 3px; }
 #tutorial-steps li[aria-current="step"] { background: #4a3322; color: #ffdc99; box-shadow: inset 2px 0 #d29148; }
-@media (orientation: landscape) and (max-height: 420px) {
-  #tutorial-guide.slash-lesson { left: var(--sl); transform: none; width: min(460px, calc(100% - var(--sl) - var(--sr) - 220px)); padding: 6px 10px; }
+#tutorial-steps .step-compact { display: none; }
+@media (orientation: landscape) and (max-height: 500px) {
+  #tutorial-guide.slash-lesson { left: var(--sl); transform: none; width: min(320px, calc(36vw - var(--sl))); padding: 6px 10px; }
+  .slash-lesson header { font-size: clamp(12px, 2vw, 15px); gap: 5px; }
   #tutorial-steps li { padding-block: 2px; }
+  #tutorial-steps .step-full { display: none; }
+  #tutorial-steps .step-compact { display: inline; }
 }
 #tutorial-timing { position: relative; margin-top: 7px; height: 9px; border-radius: 3px; background: #4a3528; overflow: hidden; }
 #tutorial-timing::after { content: ""; position: absolute; inset: 0 var(--timing-end) 0 var(--timing-start); background: #78be93; }

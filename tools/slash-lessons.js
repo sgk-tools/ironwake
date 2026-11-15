@@ -99,13 +99,44 @@ async function run() {
     const guide = page.locator('#tutorial-guide');
     await guide.waitFor();
     assert.equal(await page.locator('#tutorial-steps li:visible').count(), 3);
-    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 568, height: 320 }, { width: 852, height: 393 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 568, height: 320 }, { width: 852, height: 393 }, { width: 900, height: 450 }]) {
       await page.setViewportSize(size);
       const panel = await guide.boundingBox();
       for (const button of ['attack', 'heavy', 'dodge', 'rage']) {
         const box = await page.locator('#btn-' + button).boundingBox();
         assert.ok(panel.y + panel.height <= box.y || panel.x + panel.width <= box.x, JSON.stringify({ size, panel, button, box }));
       }
+      if (size.width <= size.height) continue;
+      assert.equal(await page.locator('#tutorial-steps .step-compact:visible').count(), 3);
+      const heroBounds = await page.evaluate(() => new Promise(resolve => {
+        const g = window.__game, h = g.hero();
+        const render = g.renderer.render;
+        document.documentElement.style.setProperty('--sl', '47px');
+        g.startAction('BACK_LEAP');
+        h.act.t = 0.24;
+        g.renderer.render = (_scene, camera) => {
+          camera.updateMatrixWorld(true);
+          const corners = [];
+          for (const joint of Object.values(h.rig.j)) {
+            const mesh = joint.children[0];
+            if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+            const { min, max } = mesh.geometry.boundingBox;
+            for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
+              const point = h.tip.clone().set(x, y, z).applyMatrix4(mesh.matrixWorld).project(camera);
+              corners.push({ x: (point.x + 1) * innerWidth / 2, y: (1 - point.y) * innerHeight / 2 });
+            }
+          }
+          const panelRight = document.querySelector('#tutorial-guide').getBoundingClientRect().right;
+          document.documentElement.style.removeProperty('--sl');
+          g.renderer.render = render;
+          resolve({
+            left: Math.min(...corners.map(p => p.x)), right: Math.max(...corners.map(p => p.x)),
+            top: Math.min(...corners.map(p => p.y)), bottom: Math.max(...corners.map(p => p.y)), panelRight,
+          });
+        };
+      }));
+      assert.ok(heroBounds.left >= heroBounds.panelRight + 8 && heroBounds.right <= size.width
+        && heroBounds.top >= 0 && heroBounds.bottom <= size.height, JSON.stringify({ size, heroBounds }));
     }
     await page.getByRole('button', { name: '一時停止' }).tap();
     await page.getByRole('button', { name: 'タイトルへ戻る' }).tap();
@@ -126,7 +157,7 @@ async function run() {
       }
     }
     assert.deepEqual(errors, []);
-    console.log(`${lessons.length} slash lessons, persistent numbered steps and separated HUD counters passed.`);
+    console.log(`${lessons.length} slash lessons, unobstructed landscape hero, persistent steps and separated HUD counters passed.`);
   } finally {
     await browser.close();
   }

@@ -2270,11 +2270,18 @@ function buildSlashSteps(commands) {
   const touch = matchMedia('(pointer: coarse)').matches;
   const steps = commands.map(step => {
     const item = document.createElement('li');
+    const full = document.createElement('span'), compact = document.createElement('span');
     const direction = SLASH_DIRECTIONS[step.dir];
     const button = step.kind === 'heavy' ? heavy : slash;
-    item.textContent = direction
+    full.className = 'step-full';
+    full.textContent = direction
       ? (touch ? `${direction.stick}にスティックを倒したまま${button}` : `${direction.keys}を押しながら ${button}`)
       : (touch ? `スティックから指を離して${button}` : `方向キーを離して ${button}`);
+    compact.className = 'step-compact';
+    compact.textContent = direction
+      ? `${touch ? direction.stick : direction.keys} ＋ ${button}`
+      : `${touch ? 'スティックを離す' : '方向キーを離す'} → ${button}`;
+    item.append(full, compact);
     return item;
   });
   $('#tutorial-steps').replaceChildren(...steps);
