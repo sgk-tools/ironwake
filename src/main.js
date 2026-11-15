@@ -915,6 +915,28 @@ function gainExp(n) {
   if (h.level >= LEVEL_MAX) h.exp = 0;
 }
 
+// Level-up: the screen first holds on "レベルアップ" (the world is frozen), then the stat selection opens.
+// A tap or key press skips the wait once the banner has had a moment on screen.
+const LEVELUP_HOLD = 1.4, LEVELUP_SKIP_AFTER = 0.5;
+function beginLevelUp() {
+  G.state = 'levelup'; G.levelUpT = 0;
+  UI.hud.inert = true;
+  input.clear(); input.resetButtons(); input.keys.clear(); input.resetStick();
+  hero.pendingActions = {};
+  $('#lu-lv').textContent = `Lv ${hero.level}`;
+  const el = $('#levelup-freeze');
+  el.hidden = false; el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  sfx.play('heal'); G.shake = 0;
+}
+function endLevelUp() {
+  if (G.state !== 'levelup') return;
+  $('#levelup-freeze').hidden = true;
+  showStatSelection();
+}
+function skipLevelUp() { if (G.state === 'levelup' && G.levelUpT >= LEVELUP_SKIP_AFTER) endLevelUp(); }
+window.addEventListener('pointerdown', skipLevelUp);
+window.addEventListener('keydown', e => { if (G.state === 'levelup') { skipLevelUp(); e.preventDefault(); } });
+
 function showStatSelection() {
   G.state = 'stat-select';
   UI.statSelect.hidden = false;
@@ -2239,6 +2261,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (G.state === 'stat-select') return;
+  if (G.state === 'levelup') { G.levelUpT += dt; if (G.levelUpT >= LEVELUP_HOLD) endLevelUp(); return; }   // frozen on the banner
   // adaptive quality: drop resolution / shadows if frames are slow
   fpsAcc += dt; fpsN++; fpsCheck += dt;
   if (fpsCheck > 2.5 && G.state === 'play') {
@@ -2259,7 +2282,7 @@ function frame(now) {
         if (G.state === 'play') updateWaves(dt);
         fx.update(dt);
         if (G.state === 'play' && !hero.dead && statPoints() > 0) {
-          showStatSelection();
+          beginLevelUp();
           break;
         }
       }
