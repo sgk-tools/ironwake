@@ -663,3 +663,51 @@ HERO_ACTIONS.JUMP_SPIN = {
     [0.72, { ...HERO.idle, rootYaw: 2 * Math.PI }, 'io'],
   ],
 };
+
+// ======================================================================= more slash patterns
+// Variants of the IK-solved cuts and double cuts. Which one comes out depends on the stick direction, how many
+// cuts are already in the string, and what button (heavy / dodge) is pressed (see the tables in main.js).
+//   ~F  quick version of a cut:   0.78x time, lighter
+//   ~H  weighty version of a cut: 1.3x time, heavier hit and farther knockback (staggers armoured enemies)
+//   A+B double cut: two cuts in one action (two separate hits)
+const IK_OF = {
+  L1: 'R2L', L2: 'L2R', CROSS: 'HIGH_R_LOW_L', CROSS2: 'HIGH_L_LOW_R', L1B: 'LOW_R_HIGH_L', L2B: 'LOW_L_HIGH_R',
+  LOWSWEEP: 'LOW_SWEEP', LOWSWEEP2: 'LOW_SWEEP_L2R', HIGHCUT: 'HIGH_R2L', HIGHCUT2: 'HIGH_L2R', DOWNCUT: 'TOP_DOWN', RISECUT: 'RISE',
+};
+function scaleAction(base, f, mods) {
+  const sc = (t) => +(t * f).toFixed(4);
+  const o = { ...base, ...mods };
+  o.dur = sc(base.dur); o.active = base.active.map(sc); o.chainAt = sc(base.chainAt);
+  if (base.impact != null) o.impact = sc(base.impact);
+  if (base.lunge) o.lunge = [sc(base.lunge[0]), sc(base.lunge[1]), +(base.lunge[2] / f).toFixed(3)];   // same distance, other speed
+  o.keys = base.keys.map(([t, p, e]) => [sc(t), p, e]);
+  return o;
+}
+export const CUT_VARIANTS = [];
+for (const name of Object.keys(IK_OF)) {
+  const b = HERO_ACTIONS[name];
+  HERO_ACTIONS[name + '~F'] = scaleAction(b, 0.78, { dmg: +(b.dmg * 0.85).toFixed(1), kb: +((b.kb || 0) * 0.9).toFixed(2) });
+  HERO_ACTIONS[name + '~H'] = scaleAction(b, 1.3, { dmg: +(b.dmg * 1.45).toFixed(1), kb: +((b.kb || 0) * 1.35).toFixed(2), heavy: true, sound: 'swingHeavy' });
+  CUT_VARIANTS.push(name + '~F', name + '~H');
+}
+export const DOUBLE_CUTS = [
+  'HIGHCUT+LOWSWEEP2', 'HIGHCUT+LOWSWEEP', 'L1+L2', 'L2+L1', 'DOWNCUT+RISECUT', 'RISECUT+DOWNCUT', 'LOWSWEEP+HIGHCUT2', 'LOWSWEEP2+HIGHCUT',
+  'CROSS+L1', 'CROSS2+L2', 'L1B+DOWNCUT', 'L2B+DOWNCUT', 'HIGHCUT2+DOWNCUT', 'L2B+LOWSWEEP2', 'RISECUT+CROSS', 'RISECUT+CROSS2',
+];
+for (const id of DOUBLE_CUTS) {
+  const [a, b] = id.split('+');
+  // the second cut's own wind-up follows the first one's end after a short transition (0.1 s; checked pair by pair
+  // so that the blade stays off the ground while it can hit)
+  const GAP = id === 'L2+L1' ? 0.06 : 0.1;   // this pair dips below the ground with the longer transition
+  const ka = CUTS[IK_OF[a]], tail = ka[ka.length - 1][0];
+  const second = CUTS[IK_OF[b]].map(([t, p, e]) => [+(t + tail + GAP).toFixed(4), p, e || 'io']);
+  const end = second[second.length - 1][0];
+  HERO_ACTIONS[id] = {
+    ...HERO_ACTIONS.XCUT, multi: 2, sound: 'swing',
+    dmg: +((HERO_ACTIONS[a].dmg + HERO_ACTIONS[b].dmg) / 2 * 0.95).toFixed(1), kb: +(((HERO_ACTIONS[a].kb || 0) + (HERO_ACTIONS[b].kb || 0)) / 2).toFixed(2),
+    up: Math.max(HERO_ACTIONS[a].up || 0, HERO_ACTIONS[b].up || 0),
+    dur: +(end + 0.2).toFixed(3), active: [HERO_ACTIONS[a].active[0], +(tail + GAP + HERO_ACTIONS[b].active[1]).toFixed(3)], chainAt: +(end + 0.02).toFixed(3),
+    lunge: [0.05, +(tail + GAP + 0.12).toFixed(3), 4],
+    keys: [...CUTS[IK_OF[a]].map(([t, p, e]) => [t, p, e || 'io']), ...second, [+(end + 0.2).toFixed(3), HERO.idle, 'io']],
+  };
+}

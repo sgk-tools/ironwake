@@ -4,7 +4,7 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { EXTRA_WEAPONS } from './extra-weapons.js';
 import { BUILTIN_WEAPONS, STANDARD_DECO, applyGrowth, pulseWeapon, GROW_TEXT, GROW_MAX } from './weapons.js';
-import { JOINTS, ORDER, HERO, HERO_ACTIONS, heroRun, sampleKeys, smoothPose, lerpPose, gruntPose, bossPose } from './anim.js';
+import { JOINTS, ORDER, HERO, HERO_ACTIONS, heroRun, sampleKeys, smoothPose, lerpPose, gruntPose, bossPose, CUT_VARIANTS, DOUBLE_CUTS } from './anim.js';
 
 // ======================================================================= setup
 const $ = (s) => document.querySelector(s);
@@ -718,10 +718,17 @@ function comboChain() {
   if (hero.rageT > 0) {
     return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(hero.level >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(hero.level >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
-  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP', 'CROSS'], ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT', 'L2B'], ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG'],
-    ...(technique >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B', 'CROSS2']] : []),
-    ...(technique >= 3 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG', 'L2B']] : []),
-    ...(technique >= 4 ? [['L6', 'VAULT']] : [])];
+  // higher technique adds quick / weighty versions and double cuts to the pools, and longer strings
+  const t = technique;
+  return [['L1', 'L1B', 'VCUT', 'LOWSWEEP', 'CROSS', ...(t >= 5 ? ['L1~F', 'CROSS~F'] : []), ...(t >= 8 ? ['HIGHCUT+LOWSWEEP2'] : [])],
+    ['L2', 'XCUT', 'SPIN1', 'REVSPIN', 'BACKCUT', 'L2B', ...(t >= 5 ? ['L2~F', 'L2B~F'] : []), ...(t >= 8 ? ['L2+L1'] : [])],
+    ['L3', 'VCUT', 'STAB', 'SHOULDER', 'WHEEL', 'DRAG', ...(t >= 6 ? ['DOWNCUT~H', 'RISECUT~F'] : []), ...(t >= 9 ? ['DOWNCUT+RISECUT'] : [])],
+    ...(t >= 2 ? [['L4', 'SPIN1', 'REVSPIN', 'L1B', 'CROSS2', ...(t >= 6 ? ['CROSS2~H', 'LOWSWEEP2~F'] : [])]] : []),
+    ...(t >= 3 ? [['L5', 'XCUT', 'LOWSWEEP', 'DRAG', 'L2B', ...(t >= 7 ? ['LOWSWEEP~H', 'CROSS+L1'] : [])]] : []),
+    ...(t >= 4 ? [['L6', 'VAULT', ...(t >= 8 ? ['L2B+LOWSWEEP2'] : [])]] : []),
+    ...(t >= 6 ? [['STEP_CUT', 'HIGHCUT', 'DOWNCUT']] : []),
+    ...(t >= 7 ? [['JUMP_SPIN', 'CROSS2~H', 'RISECUT+CROSS']] : []),
+    ...(t >= 9 ? [['RISECUT+CROSS2', 'DOWNCUT~H', 'L2B+DOWNCUT']] : [])];
 }
 function pickFrom(pool, prev) {
   const opts = pool.filter(n => n !== prev);
@@ -755,6 +762,62 @@ const DIRECTIONAL_CUTS = {
 };
 const RETREAT_CUTS = new Set(['BACKCUT', 'RETREAT_SWEEP', 'BACK_LEAP']);
 const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
+
+// ---- more slash patterns -------------------------------------------------------------------------------
+// The first two cuts of a string (and a 3rd cut that repeats the same direction) keep the fixed directional table
+// above. From there on, what comes out depends on the direction held, the number of cuts already in the string
+// (k), and the cut just before it; a heavy press after 3+ cuts and a dodge out of a string are count-aware too.
+// All of these are pure functions of their inputs, so a given situation always gives the same move.
+const hashName = (name) => [...String(name || '')].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+// light cuts, 3rd cut on (odd pool sizes so that a repeated direction walks through every entry)
+const EXT_LIGHT = {
+  FWD:  ['L6', 'STEP_CUT', 'JUMP_FLIP', 'L5', 'HIGHCUT~F', 'DOWNCUT~H', 'DOWNCUT+RISECUT', 'CROSS+L1', 'JUMP_SPIN'],
+  L45:  ['VCUT', 'L1B', 'DASH', 'HIGHCUT', 'L1B~F', 'CROSS~H', 'RISECUT+CROSS', 'L1B+DOWNCUT', 'LOWSWEEP+HIGHCUT2'],
+  R45:  ['DOWNCUT', 'STEP_CUT', 'JUMP_SPIN', 'HIGHCUT2', 'DOWNCUT~F', 'CROSS2~H', 'RISECUT+CROSS2', 'L2B+DOWNCUT', 'LOWSWEEP2+HIGHCUT'],
+  L90:  ['SPIN1', 'LOWSWEEP', 'L1', 'HIGHCUT', 'L1~F', 'LOWSWEEP~H', 'HIGHCUT+LOWSWEEP2', 'L1+L2', 'CROSS~F'],
+  R90:  ['REVSPIN', 'LOWSWEEP2', 'L2', 'HIGHCUT2', 'L2~F', 'LOWSWEEP2~H', 'HIGHCUT+LOWSWEEP', 'L2+L1', 'CROSS2~F'],
+  L135: ['LOWSWEEP', 'RISECUT', 'CROSS', 'L1B', 'LOWSWEEP~F', 'RISECUT~H', 'CROSS+L1', 'HIGHCUT2+DOWNCUT', 'BACK_LEAP'],
+  R135: ['LOWSWEEP2', 'UPPER', 'CROSS2', 'L2B', 'LOWSWEEP2~F', 'RISECUT~H', 'CROSS2+L2', 'L2B+LOWSWEEP2', 'RETREAT_SWEEP'],
+  BACK: ['DOWNCUT', 'RISECUT', 'BACKCUT', 'BACK_LEAP', 'DOWNCUT~H', 'RISECUT~F', 'DOWNCUT+RISECUT', 'RISECUT+DOWNCUT', 'RETREAT_SWEEP'],
+};
+function extendedLight(dir, k, step, prev) {
+  const pool = EXT_LIGHT[dir];
+  const i = (step * 4 + (k - 3) + hashName(prev)) % pool.length;
+  return pool[i] === prev ? pool[(i + 1) % pool.length] : pool[i];
+}
+// heavy pressed after n cuts (n >= 3): one pool per direction and per size of string (3, 4, 5, 6, 7-8, 9+)
+const FINISH_EXT = {
+  N:    [['RSPIN2', 'REVSPIN'], ['L5', 'DOWNCUT~H'], ['RLEAP', 'VAULT'], ['RLEAP', 'L6', 'DOWNCUT+RISECUT'], ['VAULT', 'RISECUT+DOWNCUT', 'RSPIN2'], ['RLEAP', 'L2B+LOWSWEEP2', 'JUMP_SPIN']],
+  FWD:  [['JUMP_SPIN', 'L6'], ['JUMP_FLIP', 'L5'], ['RLEAP', 'JUMP_SPIN'], ['VAULT', 'L6'], ['JUMP_FLIP', 'DOWNCUT+RISECUT'], ['RLEAP', 'JUMP_SPIN', 'VAULT']],
+  L45:  [['VAULT', 'FIN2'], ['DOWNCUT~H', 'L1B~H'], ['HIGHCUT+LOWSWEEP2', 'VAULT'], ['L5', 'FIN2'], ['RISECUT+CROSS', 'RLEAP'], ['VAULT', 'HIGHCUT+LOWSWEEP2', 'L6']],
+  R45:  [['L6', 'L5'], ['DOWNCUT~H', 'CROSS2~H'], ['L2B+DOWNCUT', 'VAULT'], ['L6', 'FIN2'], ['RISECUT+CROSS2', 'RLEAP'], ['VAULT', 'L2B+DOWNCUT', 'L5']],
+  L90:  [['L4', 'RSPIN2'], ['LOWSWEEP~H', 'L1~H'], ['L1+L2', 'RSPIN2'], ['SPIN1', 'L4'], ['HIGHCUT+LOWSWEEP2', 'RSPIN2'], ['L4', 'L1+L2', 'RLEAP']],
+  R90:  [['REVSPIN', 'RSPIN2'], ['LOWSWEEP2~H', 'L2~H'], ['L2+L1', 'REVSPIN'], ['RSPIN2', 'REVSPIN'], ['HIGHCUT+LOWSWEEP', 'RSPIN2'], ['REVSPIN', 'L2+L1', 'RLEAP']],
+  L135: [['BACK_LEAP', 'DRAG'], ['LOWSWEEP~H', 'RISECUT~H'], ['CROSS+L1', 'BACK_LEAP'], ['DRAG', 'FIN2'], ['HIGHCUT2+DOWNCUT', 'BACK_LEAP'], ['RLEAP', 'CROSS+L1', 'DRAG']],
+  R135: [['RETREAT_SWEEP', 'BACK_LEAP'], ['LOWSWEEP2~H', 'RISECUT~H'], ['CROSS2+L2', 'RETREAT_SWEEP'], ['BACK_LEAP', 'FIN2'], ['L2B+LOWSWEEP2', 'RETREAT_SWEEP'], ['RLEAP', 'CROSS2+L2', 'BACK_LEAP']],
+  BACK: [['FIN2', 'BACK_LEAP'], ['DOWNCUT~H', 'RETREAT_SWEEP'], ['DOWNCUT+RISECUT', 'BACK_LEAP'], ['FIN2', 'DRAG'], ['RISECUT+DOWNCUT', 'BACK_LEAP'], ['RLEAP', 'FIN2', 'DOWNCUT+RISECUT']],
+};
+const finishBucket = (n) => n <= 3 ? 0 : n === 4 ? 1 : n === 5 ? 2 : n === 6 ? 3 : n <= 8 ? 4 : 5;
+function finisherFor(n, dir, prev) {
+  const pool = FINISH_EXT[dir || 'N'][finishBucket(n)];
+  const i = (hashName(prev) + n) % pool.length;
+  return pool[i] === prev ? pool[(i + 1) % pool.length] : pool[i];
+}
+// dodge out of a string of n >= 1 cuts, then slash: eight directions x four sizes of string (retreating moves are
+// left out: the hero turns toward the stick here)
+const DODGE_EXT = {
+  N:    ['L1', 'L2', 'L1+L2', 'RSPIN2'],
+  FWD:  ['DASH', 'STEP_CUT', 'JUMP_FLIP', 'L6'],
+  L45:  ['HIGHCUT', 'VCUT', 'HIGHCUT+LOWSWEEP2', 'DOWNCUT~H'],
+  R45:  ['HIGHCUT2', 'DOWNCUT', 'RISECUT+CROSS2', 'CROSS2~H'],
+  L90:  ['CROSS', 'LOWSWEEP~F', 'L1+L2', 'SPIN1'],
+  R90:  ['CROSS2', 'LOWSWEEP2~F', 'L2+L1', 'REVSPIN'],
+  L135: ['L1B', 'RISECUT', 'CROSS+L1', 'L1B~H'],
+  R135: ['L2B', 'RISECUT~F', 'CROSS2+L2', 'L2B~H'],
+  BACK: ['UPPER', 'DOWNCUT', 'DOWNCUT+RISECUT', 'RISECUT~H'],
+};
+const dodgeBucket = (n) => n <= 2 ? 0 : n <= 4 ? 1 : n <= 6 ? 2 : 3;
+const dodgeCutFor = (n, dir) => DODGE_EXT[dir || 'N'][dodgeBucket(n)];
 
 function readCutDirection(facing = hero.act?.cutFacing ?? hero.face) {
   const [mx, my] = input.move();
@@ -798,6 +861,9 @@ function pickLight(prev, dir = readCutDirection()) {
   if (!previous?.cutDir && dir === 'BACK') return 'BACKCUT';
   const pool = DIRECTIONAL_CUTS[dir].light;
   const step = previous?.cutDir === dir ? previous.cutStep : 0;
+  // The 3rd cut repeating the same direction stays on the fixed table (forward x3 = big leap, back x3 = back jump);
+  // every other cut from the 3rd on is chosen by the count-aware table.
+  if (hero.lightCount >= 4 || (hero.lightCount === 3 && step === 0)) return extendedLight(dir, hero.lightCount, step, prev);
   const name = pool[step % pool.length];
   return name === prev ? pool[(step + 1) % pool.length] : name;
 }
@@ -836,7 +902,9 @@ function startFinisher(action) {
 
   const dir = action.queuedHeavyDir || action.cutDir;
   let name;
-  if (!dir) {
+  if (count >= 3) {
+    name = finisherFor(count, dir, action.name);
+  } else if (!dir) {
     name = pickFrom(FINISHERS[Math.min(count, 5)], null);
   } else {
     const reversal = reverseCut(action.cutDir, dir);
@@ -1011,7 +1079,8 @@ function queueLateSideSpin(a) {
 
 function startDodgeCut(roll) {
   const h = hero;
-  const name = DODGE_CUT[readDir()] || 'L1';
+  const from = roll.fromCount || 0;
+  const name = from > 0 ? dodgeCutFor(from, readCutDirection()) : (DODGE_CUT[readDir()] || 'L1');   // from idle: the fixed four-way table
   const rollFacing = h.face;
   const [mx, my] = input.move();
   if (Math.hypot(mx, my) > 0.3) h.face = Math.atan2(-mx, my);
@@ -1113,7 +1182,9 @@ function updateHero(dt) {
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) {
     delete h.pendingActions.dodge;
+    const fromCount = act?.light ? h.lightCount : 0;
     startAction('DODGE');
+    h.act.fromCount = fromCount;   // how many cuts were in the string we dodged out of
   }
   else if (!act) {
     // heavy: a press, or the button still held from a press that could not be used yet (made while
@@ -2473,7 +2544,7 @@ async function boot() {
   setupBossBattle();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS };
 }
 
 $('.difficulty-choice').addEventListener('change', refreshContinue);
