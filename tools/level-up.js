@@ -124,66 +124,41 @@ async function run() {
     await dialog.waitFor({ state: 'hidden' });
     console.log('Stage checkpoint, retry, continue and legacy save migration passed');
 
-    for (let rank = 1; rank <= 10; rank++) {
-      const chain = await page.evaluate(technique => new Promise(resolve => {
-        const g = window.__game;
-        g.startGame(0, technique, 0, { technique });
-        Object.assign(g.G, { introT: 99, substeps: 1 });
-        g.input.press('attack');
-        const h = g.hero();
-        const end = performance.now() + 8000;
-        const tick = () => {
-          if (h.lightRecovery > 0 || h.lightCount >= 13 || performance.now() >= end) {
-            g.input.held.delete('attack');
-            resolve({ hits: h.lightCount, recovery: h.lightRecovery });
-          } else requestAnimationFrame(tick);
-        };
+    // One press = one attack, so a string is built by tapping. Every rank stops at its cap (n + 2 cuts; the top
+    // rank is no longer unlimited but 14); a plain-slash string ends with the long 0.6 s pause.
+    const tapChain = (technique, directional) => page.evaluate(([technique, directional]) => new Promise(resolve => {
+      const g = window.__game;
+      g.startGame(0, technique, 0, { technique });
+      Object.assign(g.G, { introT: 99, substeps: 1 });
+      const h = g.hero();
+      let key = 'KeyW', nextTap = g.G.time;
+      const end = performance.now() + 12000;
+      const tick = () => {
+        if (h.lightRecovery > 0 || h.lightCount >= 17 || performance.now() >= end) {
+          g.input.keys.clear();
+          resolve({ hits: h.lightCount, recovery: h.lightRecovery });
+          return;
+        }
+        if (g.G.time >= nextTap) {
+          if (directional) { g.input.keys.delete(key); key = key === 'KeyW' ? 'KeyD' : 'KeyW'; g.input.keys.add(key); }
+          g.input.press('attack'); g.input.held.delete('attack');
+          nextTap = g.G.time + 0.12;
+        }
         requestAnimationFrame(tick);
-      }), rank);
-      assert.equal(chain.hits, rank === 10 ? 13 : rank + 2);
-      assert.equal(chain.recovery > 0, rank < 10);
-    }
-    console.log('Held attack chains at all ten technique ranks passed');
-
+      };
+      requestAnimationFrame(tick);
+    }), [technique, directional]);
     for (let rank = 1; rank <= 10; rank++) {
-      const chain = await page.evaluate(technique => new Promise(resolve => {
-        const g = window.__game;
-        g.startGame(0, technique, 0, { technique });
-        Object.assign(g.G, { introT: 99, substeps: 1 });
-        const h = g.hero();
-        const initialFlows = g.G.flowCuts || 0;
-        let key = 'KeyW';
-        let lastTurn;
-        g.input.keys.add(key);
-        g.input.press('attack');
-        const end = performance.now() + 8000;
-        const tick = () => {
-          if (h.lightRecovery > 0 || h.lightCount >= 13 || performance.now() >= end) {
-            g.input.keys.clear();
-            g.input.held.delete('attack');
-            resolve({ hits: h.lightCount, redirects: (g.G.flowCuts || 0) - initialFlows, recovery: h.lightRecovery });
-            return;
-          }
-          const action = h.act;
-          if (action?.light && action !== lastTurn) {
-            const [start, finish] = action.def.active;
-            if (action.t >= (start + finish) / 2) {
-              lastTurn = action;
-              g.input.keys.delete(key);
-              key = key === 'KeyW' ? 'KeyD' : 'KeyW';
-              g.input.keys.add(key);
-            }
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }), rank);
-      const hits = rank === 10 ? 13 : rank + 2;
-      assert.equal(chain.hits, hits);
-      assert.equal(chain.redirects, hits - 1);
-      assert.equal(chain.recovery > 0, rank < 10);
+      const cap = rank === 10 ? 14 : rank + 2;
+      const plain = await tapChain(rank, false);
+      assert.equal(plain.hits, cap, `rank ${rank}: tapped chain stops at its cap`);
+      assert.ok(plain.recovery > 0.5, `rank ${rank}: plain string ends with the long pause`);
+      // direction changes are links: same cap, but the normal short pause
+      const directional = await tapChain(rank, true);
+      assert.equal(directional.hits, cap, `rank ${rank}: directional chain stops at its cap`);
+      assert.ok(directional.recovery > 0 && directional.recovery < 0.4, `rank ${rank}: linked string ends with the short pause`);
     }
-    console.log('Flow redirects count toward all ten technique ranks and stop at the cap');
+    console.log('Tapped attack chains at all ten technique ranks stop at their caps (plain: long pause, directional: short pause)');
 
     const dodge = await page.evaluate(() => {
       const g = window.__game;

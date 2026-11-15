@@ -691,7 +691,7 @@ function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
   if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
   h.act = { name, t: 0, def, hitDone: false, swung: false, startT: G.time };
-  { const [fx_, fy_] = input.move(); h.flowAng = Math.hypot(fx_, fy_) > 0.3 ? Math.atan2(-fx_, fy_) : null; h.faceTo = null; }
+  if (LINK_MOVES.has(name)) noteLink();
   h.attackId++;
   const aim = h.aimNext !== false; h.aimNext = true;
   if (aim && def.type && name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') {
@@ -814,6 +814,7 @@ function startDirectedCut(name, dir, facing) {
 }
 
 function startLight(prev, dir = readCutDirection(), spin) {
+  if (dir) noteLink(); else hero.monoRun = (hero.monoRun || 0) + 1;
   const previous = hero.act;
   const facing = previous?.cutFacing ?? hero.face;
   const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
@@ -821,6 +822,7 @@ function startLight(prev, dir = readCutDirection(), spin) {
   const name = spin || next;
   startDirectedCut(name, dir, facing);
   hero.act.light = true;
+  hero.act.mono = hero.monoRun;
   hero.act.cutFacing = prev || dir ? facing : hero.face;
   hero.act.cutDir = dir;
   hero.act.cutStep = step;
@@ -828,6 +830,7 @@ function startLight(prev, dir = readCutDirection(), spin) {
 
 function startFinisher(action) {
   const h = hero;
+  noteLink();
   const count = h.lightCount || 0;
   if (count <= 0) { beginCharge(); startAction('CHARGE'); return; }
 
@@ -870,7 +873,17 @@ const DODGE_CUT = { fwd: 'DASH', back: 'UPPER', left: 'CROSS', right: 'CROSS2' }
 const expNeed = (lv) => 14 + lv * 10;
 const dmgMul = () => 1 + POWER_PER_RANK * (hero.stats.power - 1);
 const maxHealth = () => 1000 + HEALTH_PER_RANK * (hero.stats.health - 1);
-const lightLimit = () => hero.stats.technique === STAT_MAX ? Infinity : hero.stats.technique + 2;
+// Combo length per technique rank: rank n allows n + 2 cuts (3 ... 11); the top rank used to be unlimited and
+// is now 14. Every rank stops at its cap, so a longer string needs heavy / dodge / direction links.
+const LIGHT_CAP = Array.from({ length: STAT_MAX + 1 }, (_, n) => n === 0 ? 0 : n === STAT_MAX ? STAT_MAX + 4 : n + 2);
+const lightLimit = () => LIGHT_CAP[hero.stats.technique] ?? 3;
+// A light cut that follows a direction, a heavy or a dodge is a "link" and restores full damage. Plain slashes
+// repeated with no link lose power from the 4th cut on (enemies x0.5, the boss x0.2), and at the cap the
+// pause grows from 0.22 s to 0.6 s.
+const LINK_MOVES = new Set(['CHARGE', 'DODGE']);
+const MONO_FREE = 3, MONO_ENEMY = 0.5, MONO_BOSS = 0.2, MONO_RECOVERY = 0.6;
+const noteLink = () => { hero.monoRun = 0; };
+const monoFactor = (a, isBoss) => (a?.light && (a.mono || 0) > MONO_FREE) ? (isBoss ? MONO_BOSS : MONO_ENEMY) : 1;
 const awakeningDuration = () => 12 + (hero.stats.awakening - 1);
 
 function gainRage(amount) {
@@ -953,19 +966,6 @@ const HEAVY_SPIN = new Set(['SPIN_IN', 'SPIN_LOOP']);
 const HEAVY_SPIN_KB = 3.0;          // x charge bonus below; aims for ~20-25 m on grunts
 
 // ---- flowing cuts: turning the stick in the middle of a slash redirects the blade
-// While the attack button is held (or was pressed a moment ago), moving the stick to a new direction part-way
-// through a cut starts a new cut straight away: the hero turns and steps toward the stick and the blade
-// travels the way the hero turned. The cut depends on how far and which way the stick turned (45 / 90 /
-// 135 degrees left or right, straight back, or forward from neutral), each with several lines (high, mid,
-// low, rising, falling), and three turns in a row the same way roll into a spin. No two in a row repeat.
-const FLOW = {
-  L45: ['CROSS', 'DOWNCUT', 'HIGHCUT'], L90: ['L1', 'LOWSWEEP', 'HIGHCUT'], L135: ['L1B', 'RISECUT', 'LOWSWEEP'],
-  R45: ['CROSS2', 'DOWNCUT', 'HIGHCUT2'], R90: ['L2', 'LOWSWEEP2', 'HIGHCUT2'], R135: ['L2B', 'RISECUT', 'LOWSWEEP2'],
-  BACK: ['REVSPIN', 'SPIN1', 'UPPER', 'L4'], FWD: ['DOWNCUT', 'STAB', 'RISECUT', 'VCUT'],
-};
-const FLOW_SPIN = { L: ['SPIN1', 'L4'], R: ['REVSPIN'] };
-const NO_FLOW = new Set(['CHARGE', 'SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'RAGE', 'HURT', 'DODGE', 'DEATH', 'CLASH', 'CLASH_FOLLOWUP', 'CLASH_RECOIL', 'MIKIRI_L', 'MIKIRI_R', 'MIKIRI_B']);
-const FLOW_TURN = 0.6;          // radians the stick must move from the direction of the current cut
 function flowBucket(turn) {
   const a = Math.abs(turn), side = turn > 0 ? 'L' : 'R';
   if (a < 0.4) return 'FWD';
@@ -983,43 +983,6 @@ function queueLateSideSpin(a) {
   a.queuedDir = dir;
   a.queuedManual = true;
   a.sideSpin = dir === 'L90' ? 'SPIN1' : 'REVSPIN';
-  return true;
-}
-
-// returns true when a redirect started
-function tryFlow() {
-  const h = hero, a = h.act;
-  if (!a || !a.def.type || NO_FLOW.has(a.name) || a.def.clashLocked || a.queuedManual || a.queued === 'heavy') return false;
-  // A redirect continues the same chain, including when it starts from a finisher.
-  const count = a.light ? h.lightCount : 1;
-  if (count >= lightLimit()) return false;
-  if (!(input.held.has('attack') || G.time - (h.lastAtkT ?? -9) < 0.45)) return false;
-  // part-way through the cut: its first half has to play (and hit) before it can be turned
-  const mid = a.def.active[0] + (a.def.active[1] - a.def.active[0]) * 0.5;
-  if (a.t < mid || (a.def.impact && !a.hitDone)) return false;
-  const [mx, my] = input.move();
-  if (Math.hypot(mx, my) < 0.5) return false;
-  const ang = Math.atan2(-mx, my);
-  if (h.flowAng != null && Math.abs(angLerp(h.flowAng, ang, 1) - h.flowAng) < FLOW_TURN) return false;
-  const turn = angLerp(h.face, ang, 1) - h.face;
-  const bucket = flowBucket(turn), sense = bucket[0] === 'L' ? 'L' : bucket[0] === 'R' ? 'R' : null;
-  // same way three times running = roll into a spin
-  if (sense && sense === h.flowSense && G.time - (h.flowT || 0) < 0.9) h.flowRun = (h.flowRun || 1) + 1; else h.flowRun = 1;
-  h.flowSense = sense; h.flowT = G.time;
-  let name;
-  if (sense && h.flowRun >= 3) { name = pickFrom(FLOW_SPIN[sense], a.name); h.flowRun = 0; }
-  else name = pickFrom(FLOW[bucket], a.name);
-  h.aimNext = false;
-  startAction(name);
-  h.act.light = true; h.act.flowed = true; h.act.bucket = bucket;
-  h.act.cutFacing = a.cutFacing ?? h.face;
-  h.act.cutDir = flowBucket(angLerp(h.act.cutFacing, ang, 1) - h.act.cutFacing);
-  h.act.cutStep = 0;
-  // the blade is already moving: skip most of the wind-up
-  if (!TURN_AXIS[name]) h.act.t = Math.min(0.07, h.act.def.active[0] * 0.6);
-  h.faceTo = ang; h.flowAng = ang;
-  h.lightCount = count + 1;
-  G.flowCuts = (G.flowCuts || 0) + 1;
   return true;
 }
 
@@ -1103,8 +1066,8 @@ function updateHero(dt) {
   }
   const attackPressed = input.consume('attack');
   if (attackPressed) h.lastSlashPress = G.time;
-  const wantAttack = attackPressed || (input.held.has('attack') && !h.act);
-  if (wantAttack) h.lastAtkT = G.time;
+  // one press = one attack: holding the button does nothing more (the heavy keeps its hold-to-charge)
+  const wantAttack = attackPressed;
   const heavyPressed = input.consume('heavy');
   if (heavyPressed) { h.heavyUsed = false; bufferAction('heavy', readCutDirection()); }
   if (!input.held.has('heavy') && !heavyPressed) h.heavyUsed = true;
@@ -1124,7 +1087,6 @@ function updateHero(dt) {
     }
   }
   else if (!sliding && !wantDodge && !wantHeavy && !attackPressed && queueLateSideSpin(act)) { /* spin queued at the end of the cut */ }
-  else if (!sliding && !wantDodge && !wantHeavy && !cutDirection && tryFlow()) { /* redirected into a new cut */ }
   else if (wantDodge && !sliding && !holdingTurn && (!act || act.name !== 'DODGE' && act.name !== 'RAGE'
     && (h.stats.dodge >= 5 || act.name === 'HURT' || act.t > (act.def.active?.[1] ?? 0)))) {
     delete h.pendingActions.dodge;
@@ -1147,9 +1109,6 @@ function updateHero(dt) {
     }
     if (wantHeavy && act.def.chainAt <= act.def.dur) {
       act.queued = 'heavy'; act.queuedHeavyDir = wantHeavy.direction;
-    }
-    if (input.held.has('attack') && !act.queued && act.t >= act.def.active[0]) {
-      act.queued = 'light'; act.queuedDir = readCutDirection();
     }
   }
 
@@ -1180,11 +1139,6 @@ function updateHero(dt) {
     if (a.dodgeTime != null) a.dodgeTime += dt;
     sampleKeys(d.keys, a.t, h.target);
     if (d.mikiri) mikiriMove(a);
-    if (a.flowed && h.faceTo != null) {
-      h.face = angLerp(h.face, h.faceTo, Math.min(1, dt * 16));
-      // step into the new direction on top of the cut's own lunge
-      if (a.t < 0.22) { h.x += Math.sin(h.faceTo) * 3.2 * dt; h.z += Math.cos(h.faceTo) * 3.2 * dt; }
-    }
     if (d.clash) clashStep(a);
     if (dodgeTime < DODGE_MOVE_END) {
       const reaction = dodgeReaction();
@@ -1196,10 +1150,8 @@ function updateHero(dt) {
       h.z += Math.cos(facing) * distance;
     } else if (!rolling && !holdingTurn && !beginTurnHold && d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1]) {
       const sp = d.lunge[2];
-      // a redirected cut lunges where the stick points, not where the body is still turning from
-      const la = a.flowed && h.faceTo != null ? h.faceTo : h.face;
-      h.x += Math.sin(la) * sp * dt * (d.type ? speedK : 1);
-      h.z += Math.cos(la) * sp * dt * (d.type ? speedK : 1);
+      h.x += Math.sin(h.face) * sp * dt * (d.type ? speedK : 1);
+      h.z += Math.cos(h.face) * sp * dt * (d.type ? speedK : 1);
     }
     if (d.sound && !a.swung && a.t >= d.active[0] - 0.06) { a.swung = true; sfx.play(d.sound); }
     if (d.multi && !a.multiDone && a.t > (d.active[0] + d.active[1]) / 2) { a.multiDone = true; h.attackId++; }
@@ -1235,7 +1187,7 @@ function updateHero(dt) {
         startLight(a.name, a.queuedDir, a.sideSpin);
       }
     } else if (a.t >= d.dur && !finishingDodgeCut(a)) {
-      if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
+      if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = (h.monoRun || 0) >= MONO_FREE ? MONO_RECOVERY : LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
       // smoothing does not unwind them backwards
@@ -1343,10 +1295,10 @@ function heroHits(a) {
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
     const def = ENEMY[e.type];
-    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult, knockback, d.up || 0, true, undefined, undefined, bonusLift); continue; }
+    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, true, undefined, undefined, bonusLift); continue; }
     if (bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
-      damageEnemy(e, d.dmg * mult, knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
+      damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && (boss.y || 0) < 1.5 && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, bossRadius() + (d.mikiri ? 0.6 : 0), 0, 4)) {
@@ -1354,7 +1306,7 @@ function heroHits(a) {
     // a staggered or parried boss takes extra damage; the evade-cut hits hardest and staggers
     const open = boss.state === 'parried' || boss.state === 'stagger';
     const stop = d.heavy || d.mikiri ? 0.13 : d.multi || turn ? 0.065 : 0.095;
-    damageBoss(d.dmg * mult * (d.mikiri ? 2.5 : open ? 1.5 : 1.0), stop);
+    damageBoss(d.dmg * mult * (d.mikiri ? 2.5 : open ? 1.5 : 1.0) * monoFactor(a, true), stop);
     if (d.mikiri && !boss.dead) {
       setBoss('stagger'); boss.poise = 0; G.mikiriHits = (G.mikiriHits || 0) + 1;
       G.hitstop = Math.max(G.hitstop, 0.12); G.slowmo = Math.min(G.slowmo, 0.3); G.shake = Math.max(G.shake, 0.7);
@@ -2196,7 +2148,7 @@ function resetGame(keepLevel = false) {
   if (!keepLevel) { hero.level = 1; hero.exp = 0; hero.stats = loadStats(); }
   hero.maxHp = maxHealth(); hero.comboIdx = 0; hero.lightCount = 0; hero.lightRecovery = 0;
   hero.neutralChain = 0; hero.pendingActions = {};
-  hero.lastAtkT = null; hero.lastSlashPress = null; hero.flowSense = null; hero.flowRun = 0;
+  hero.lastSlashPress = null; hero.monoRun = 0;
   UI.statSelect.hidden = true; UI.hud.inert = false;
   hero.x = 0; hero.z = 0; hero.face = 0; hero.hp = hero.maxHp; hero.hpLag = hero.maxHp; hero.rage = 0; hero.rageT = 0;
   hero.act = null; hero.dead = false; hero.iframe = 0; hero.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0;
@@ -2497,7 +2449,7 @@ async function boot() {
   setupBossBattle();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, FLOW, FLOW_SPIN, flowBucket, applyGrowth };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, mikiriDir, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE };
 }
 
 $('.difficulty-choice').addEventListener('change', refreshContinue);

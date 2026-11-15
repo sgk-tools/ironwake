@@ -82,10 +82,13 @@ async function run() {
       const chain = async technique => {
         reset(technique);
         const start = g.G.time;
-        pointer(document.querySelector('#btn-attack'), 'pointerdown', 2);
+        // one press = one attack: tap the attack button every 0.12 s of game time (holding it does nothing)
+        tap('attack');
+        let nextTap = g.G.time + 0.12;
         const moves = [];
         let idle = false, last;
         await until(() => {
+          if (g.G.time >= nextTap) { tap('attack'); nextTap = g.G.time + 0.12; }
           const action = h.act;
           if (moves.length && !action) idle = true;
           if (action && action !== last) {
@@ -94,7 +97,6 @@ async function run() {
           }
           return moves.length === (technique === 10 ? 12 : 3);
         });
-        pointer(window, 'pointerup', 2);
         return { moves, idle };
       };
       return {
