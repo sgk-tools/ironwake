@@ -76,6 +76,11 @@ async function run() {
     const { easy, normal, hard } = profiles;
     for (const key of ['hp', 'speed', 'damage']) assert.ok(easy[key] < normal[key] && normal[key] < hard[key], key);
     assert.ok(Object.values(hard.stats).every(rank => rank === 10));
+    const [vitals, controls, bossBar] = await Promise.all([
+      page.locator('.vitals').boundingBox(), page.locator('.right-top').boundingBox(), page.locator('#boss').boundingBox(),
+    ]);
+    assert.ok(vitals.y >= 44 && controls.y >= 44);
+    assert.ok(bossBar.y >= Math.max(vitals.y + vitals.height, controls.y + controls.height));
 
     const dodges = await page.evaluate(async () => {
       const g = window.__game, h = g.hero(), boss = g.boss();

@@ -162,6 +162,8 @@ async function run() {
     for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(size);
       const panel = await guide.boundingBox();
+      const top = await page.locator('#hud .top').boundingBox();
+      assert.ok(top.y >= 44 && panel.y >= top.y + top.height, JSON.stringify({ size, top, panel }));
       for (const button of ['attack', 'heavy', 'dodge', 'rage']) {
         const box = await page.locator('#btn-' + button).boundingBox();
         assert.ok(panel.y + panel.height <= box.y || panel.x + panel.width <= box.x, JSON.stringify({ size, panel, button, box }));
@@ -174,11 +176,14 @@ async function run() {
       const { G } = window.__game;
       Object.assign(G, { ko: 12345, waveIdx: 0, spawnLeft: 9999, spawnT: 99 });
     });
+    await page.locator('#objective').waitFor({ state: 'visible' });
     for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(size);
-      const [objective, ko, buttons] = await Promise.all([
+      const [objective, ko, buttons, vitals] = await Promise.all([
         page.locator('#objective').boundingBox(), page.locator('.ko').boundingBox(), page.locator('.right-top').boundingBox(),
+        page.locator('.vitals').boundingBox(),
       ]);
+      assert.ok(vitals.y >= 44 && ko.y >= vitals.y && objective.y >= vitals.y + vitals.height);
       assert.match(await page.locator('#objective').textContent(), /残り 9999 体/);
       for (const box of [ko, buttons]) {
         assert.ok(objective.x + objective.width <= box.x || box.x + box.width <= objective.x

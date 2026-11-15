@@ -91,8 +91,11 @@ button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
 @media (pointer: fine) { .keys.touch { display: none; } }
 
 /* ---------- HUD ---------- */
-#hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
-.top { position: absolute; top: var(--st); left: var(--sl); right: var(--sr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; align-items: start; gap: 6px 12px; }
+#hud { --hud-top: var(--st); --tutorial-top-gap: 50px; position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  #hud { --hud-top: calc(var(--st) + clamp(34px, 5vh, 42px)); --tutorial-top-gap: 74px; }
+}
+.top { position: absolute; top: var(--hud-top); left: var(--sl); right: var(--sr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; align-items: start; gap: 6px 12px; }
 .vitals { display: grid; gap: 6px; width: min(300px, 100%); }
 .bar { position: relative; height: 12px; background: var(--iron); clip-path: polygon(0 0, 100% 0, 97% 100%, 0 100%); overflow: hidden; }
 .bar > i { position: absolute; inset: 0; transform-origin: left center; display: block; }
@@ -139,7 +142,7 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 @keyframes callout { 0% { opacity: 0; transform: scale(1.6); } 15% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(0.96); } }
 #tip { position: absolute; left: 16px; right: 16px; bottom: 26%; text-align: center; font-size: 13px; letter-spacing: 0.08em; color: #f3e6cf; text-shadow: 0 1px 3px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
 #tip.show { opacity: 1; }
-#tutorial-guide { position: absolute; z-index: 1; top: calc(var(--st) + 50px); left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - var(--sl) - var(--sr))); padding: 9px 12px; background: #201610ed; border: 1px solid #906c46; border-radius: 6px; color: var(--ash); }
+#tutorial-guide { position: absolute; z-index: 1; top: calc(var(--hud-top) + var(--tutorial-top-gap)); left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - var(--sl) - var(--sr))); padding: 9px 12px; background: #201610ed; border: 1px solid #906c46; border-radius: 6px; color: var(--ash); }
 #tutorial-guide header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 #tutorial-progress { color: #ffdc99; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #tutorial-hint, #tutorial-status { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
