@@ -23,14 +23,32 @@ const assert = require('node:assert/strict');
   });
   const out = {};
 
+  // 0. one press = one attack: holding the button does not repeat; N presses = N attacks
+  out.press = [];
+  for (const taps of [1, 3]) {
+    await p.evaluate(() => window.__setup(5));
+    const r = await p.evaluate((taps) => new Promise(res => {
+      const g = window.__game, h = g.hero(); h.iframe = 1e9;
+      let starts = 0, last = null, pressed = 0; const t0 = g.G.time; let nextTap = t0;
+      const tick = () => {
+        if (pressed < taps && g.G.time >= nextTap) { g.input.press('attack'); if (taps > 1) g.input.held.delete('attack'); pressed++; nextTap = g.G.time + 0.15; }   // taps = 1: left held on purpose
+        const a = h.act; if (a && a !== last && a.def.type) starts++; last = a;
+        if (g.G.time - t0 > 3.5) { g.input.held.clear(); res({ taps, starts, held: g.input.held.has('attack') }); } else requestAnimationFrame(tick);
+      }; tick();
+    }), taps);
+    out.press.push(r);
+    assert.equal(r.starts, taps, `${taps} press(es) = ${taps} attack(s)`);
+  }
+
   // 1. every rank stops at its cap; plain 斬 only gets the long pause
   out.caps = [];
   for (let rank = 1; rank <= 5; rank++) {
     await p.evaluate(rank => window.__setup(rank), rank);
     const r = await p.evaluate(() => new Promise(res => {
-      const g = window.__game, h = g.hero(); h.iframe = 1e9; g.input.press('attack');
-      const t0 = performance.now();
-      const tick = () => { if (h.lightRecovery > 0 || performance.now() - t0 > 60000) { g.input.held.delete('attack'); res({ hits: h.lightCount, recovery: +h.lightRecovery.toFixed(2), cap: g.LIGHT_CAP[h.stats.technique] }); } else requestAnimationFrame(tick); };
+      const g = window.__game, h = g.hero(); h.iframe = 1e9; g.input.press('attack'); g.input.held.delete('attack');
+      const t0 = performance.now(); let nextTap = g.G.time + 0.12;
+      const tick = () => { if (g.G.time >= nextTap) { g.input.press('attack'); g.input.held.delete('attack'); nextTap = g.G.time + 0.12; }   // one press = one attack: tap
+        if (h.lightRecovery > 0 || performance.now() - t0 > 60000) { res({ hits: h.lightCount, recovery: +h.lightRecovery.toFixed(2), cap: g.LIGHT_CAP[h.stats.technique] }); } else requestAnimationFrame(tick); };
       tick();
     }));
     out.caps.push(r);

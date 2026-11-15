@@ -107,12 +107,14 @@ async function run() {
         const g = window.__game;
         g.startGame(0, technique, 0, { technique });
         Object.assign(g.G, { introT: 99, substeps: 1 });
-        g.input.press('attack');
+        g.input.press('attack'); g.input.held.delete('attack');
         const h = g.hero();
+        let nextTap = g.G.time + 0.12;
         const end = performance.now() + 8000;
         const tick = () => {
+          // one press = one attack: tap every 0.12 s of game time (holding the button does nothing)
+          if (g.G.time >= nextTap) { g.input.press('attack'); g.input.held.delete('attack'); nextTap = g.G.time + 0.12; }
           if (h.lightRecovery > 0 || h.lightCount >= 12 || performance.now() >= end) {
-            g.input.held.delete('attack');
             resolve({ hits: h.lightCount, recovery: h.lightRecovery });
           } else requestAnimationFrame(tick);
         };
@@ -122,7 +124,7 @@ async function run() {
       // every rank now stops at its cap (rank 5 used to be unlimited); a plain-斬 string gets the long 0.6 s pause
       assert.equal(chain.recovery > 0.5, true);
     }
-    console.log('Held attack chains at all five technique ranks passed');
+    console.log('Tapped attack chains at all five technique ranks passed');
 
     for (let rank = 1; rank <= 5; rank++) {
       const chain = await page.evaluate(technique => new Promise(resolve => {
@@ -134,7 +136,7 @@ async function run() {
         let key = 'KeyW';
         let lastTurn;
         g.input.keys.add(key);
-        g.input.press('attack');
+        g.input.press('attack'); g.input.held.delete('attack');
         const end = performance.now() + 8000;
         const tick = () => {
           if (h.lightRecovery > 0 || h.lightCount >= 12 || performance.now() >= end) {
@@ -151,6 +153,7 @@ async function run() {
               g.input.keys.delete(key);
               key = key === 'KeyW' ? 'KeyD' : 'KeyW';
               g.input.keys.add(key);
+              g.input.press('attack'); g.input.held.delete('attack');   // a redirect needs a fresh press
             }
           }
           requestAnimationFrame(tick);

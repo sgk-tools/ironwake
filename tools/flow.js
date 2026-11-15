@@ -1,4 +1,5 @@
-// Flow cuts: turning the stick part-way through a slash (attack held) redirects into a new cut.
+// Flow cuts: pressing attack while the stick is turned part-way through a slash redirects into a new cut.
+// One press = one attack: holding the button does nothing, and turning the stick without a press does nothing.
 // Checks: redirect happens mid-slash (before the normal chain point), the cut matches the turn bucket,
 // the hero turns and steps toward the stick, holding one direction or not holding attack does nothing,
 // rolling the stick one way produces a spin, the analog stick works, and many distinct cuts appear.
@@ -27,7 +28,7 @@ const { chromium } = require('playwright');
     // dirs: list of directions; each is applied once the current slash is past its midpoint
     window.__flow = (dirs, { hold = true, timeout = 120000 } = {}) => new Promise(res => {
       h.x = 0; h.z = 0; h.act = null; h.iframe = 1e9; h.flowSense = null; h.flowRun = 0; g.input.clear(); g.input.held.clear();
-      setDir(dirs[0]); g.input.press('attack'); if (!hold) g.input.held.delete('attack');
+      setDir(dirs[0]); g.input.press('attack'); g.input.held.delete('attack');
       const log = []; let i = 0, lastAct = null, armed = false, t0 = performance.now(), pend = null, snap = null;
       const tick = () => {
         const a = h.act;
@@ -49,7 +50,7 @@ const { chromium } = require('playwright');
           if (h.lightCount > 2) h.lightCount = 2;
           const d = dirs[i];
           pend = { dir: d, ang: ANG[d], turn: wrap(ANG[d] - h.face), prev: a.name, prevT: a.t, prevChain: a.def.chainAt };
-          setDir(d);
+          setDir(d); g.input.press('attack'); g.input.held.delete('attack');   // the redirect needs a fresh press
         }
         const idleDone = i + 1 >= dirs.length && (!a || (a === lastAct && a.t > 0.3 && !pend));
         if (idleDone || performance.now() - t0 > timeout) { g.input.keys.clear(); g.input.held.clear(); g.input.clear(); res({ log, flowCuts: g.G.flowCuts || 0, pendingLeft: !!pend }); return; }
@@ -76,7 +77,7 @@ const { chromium } = require('playwright');
   };
 
   console.log('A', JSON.stringify(out.A));
-  // B: holding one direction with attack held never redirects
+  // B: one press with a held direction is one attack: no redirect, no second cut
   const f0 = A.flowCuts;
   const B = await run(() => new Promise(res => { const gm = window.__game, h = gm.hero(); h.x = 0; h.z = 0; h.act = null; gm.input.keys.clear(); gm.input.keys.add('KeyA'); gm.input.press('attack'); const s = gm.G.time, f = gm.G.flowCuts || 0; const t = () => { if (gm.G.time - s > 2.5) { gm.input.keys.clear(); gm.input.held.clear(); res({ d: (gm.G.flowCuts || 0) - f }); } else requestAnimationFrame(t); }; t(); }));
   out.B = { noFlowWhenDirectionHeld: B.d === 0 };
@@ -103,9 +104,9 @@ const { chromium } = require('playwright');
   console.log('D', JSON.stringify(out.D));
   // E: analog stick (touch) instead of keys
   const E = await run(() => new Promise(res => { const gm = window.__game, h = gm.hero(); h.x = 0; h.z = 0; h.act = null; gm.input.keys.clear(); gm.input.clear(); gm.input.held.clear();
-    gm.input.mx = 0; gm.input.my = 1; gm.input.press('attack'); const f = gm.G.flowCuts || 0; let sw = false; const s = performance.now();
+    gm.input.mx = 0; gm.input.my = 1; gm.input.press('attack'); gm.input.held.delete('attack'); const f = gm.G.flowCuts || 0; let sw = false; const s = performance.now();
     const t = () => { const a = h.act;
-      if (a && !sw && a.t >= a.def.active[0] + (a.def.active[1] - a.def.active[0]) * 0.5) { sw = true; gm.input.mx = -0.9; gm.input.my = 0.2; }
+      if (a && !sw && a.t >= a.def.active[0] + (a.def.active[1] - a.def.active[0]) * 0.5) { sw = true; gm.input.mx = -0.9; gm.input.my = 0.2; gm.input.press('attack'); gm.input.held.delete('attack'); }
       if (sw && h.act && h.act.flowed && h.act.t > 0.1) { const r = { d: (gm.G.flowCuts || 0) - f, name: h.act.name }; gm.input.mx = gm.input.my = 0; gm.input.held.clear(); res(r); return; }
       if (performance.now() - s > 60000) { gm.input.mx = gm.input.my = 0; gm.input.held.clear(); res({ d: (gm.G.flowCuts || 0) - f, name: null }); return; }
       requestAnimationFrame(t); }; t(); }));

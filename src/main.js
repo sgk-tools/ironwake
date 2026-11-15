@@ -876,14 +876,16 @@ function flowBucket(turn) {
   if (a > 2.75) return 'BACK';
   return side + (a < 1.18 ? '45' : a < 1.97 ? '90' : '135');
 }
-// returns true when a redirect started
-function tryFlow() {
+// One press = one attack (holding the button no longer repeats). A press made part-way through a cut, with the
+// stick turned to a new direction, switches straight to the cut for that direction instead of waiting for the
+// current one to finish. Returns true when a redirect started.
+function tryFlow(pressed) {
   const h = hero, a = h.act;
   if (!a || !a.def.type || NO_FLOW.has(a.name) || a.def.clashLocked) return false;
   // A redirect continues the same chain, including when it starts from a finisher.
   const count = a.light ? h.lightCount : 1;
   if (count >= lightLimit()) return false;
-  if (!(input.held.has('attack') || G.time - (h.lastAtkT ?? -9) < 0.45)) return false;
+  if (!pressed) return false;   // only a fresh press redirects: no press, no new attack
   // part-way through the cut: its first half has to play (and hit) before it can be turned
   const mid = a.def.active[0] + (a.def.active[1] - a.def.active[0]) * 0.5;
   if (a.t < mid || (a.def.impact && !a.hitDone)) return false;
@@ -934,8 +936,8 @@ function updateHero(dt) {
   if (input.consume('rage') && !locked && !holdingTurn && h.rage >= 100 && h.rageT <= 0 && (!h.act || h.act.name !== 'RAGE')) {
     h.rage = 0; h.rageT = 12; startAction('RAGE'); sfx.play('rage'); G.shake = 0.8;
   }
-  const wantAttack = input.consume('attack') || (input.held.has('attack') && !h.act);
-  if (wantAttack) h.lastAtkT = G.time;
+  // one press = one attack: holding the button does nothing more (the heavy keeps its hold-to-charge)
+  const wantAttack = input.consume('attack');
   const wantHeavy = input.consume('heavy');
   if (wantHeavy) h.heavyUsed = false;
   if (!input.held.has('heavy') && !wantHeavy) h.heavyUsed = true;   // released: nothing left to carry over
@@ -945,7 +947,7 @@ function updateHero(dt) {
   const mk = !locked && wantAttack && !wantDodge && (!act || act.name === 'HURT' || (act.def.type && !act.name.startsWith('MIKIRI') && act.t > (act.def.active?.[1] ?? 0))) ? mikiriDir() : null;
   if (mk) startMikiri(mk);
   else if (locked) { /* ignore input */ }
-  else if (!wantDodge && !wantHeavy && tryFlow()) { /* redirected into a new cut */ }
+  else if (!wantDodge && !wantHeavy && tryFlow(wantAttack)) { /* redirected into a new cut */ }
   else if (wantDodge && act && act.light && act.def.type && act.t > (act.def.active?.[1] ?? 0) && h.lightCount >= 2 && !holdingTurn) {
     h.aimNext = false; startAction('BSTEP');   // two or more cuts in, then dodge: back-step cut
   }
@@ -968,7 +970,6 @@ function updateHero(dt) {
   } else if (act.def.type) {
     if (wantAttack) { act.queued = 'light'; act.queuedDir = readDir(); }
     if (wantHeavy) act.queued = 'heavy';
-    if (input.held.has('attack') && !act.queued && act.t > act.def.active[1]) { act.queued = 'light'; act.queuedDir = readDir(); }
   }
 
   // action progression
@@ -1937,7 +1938,7 @@ function resetGame(keepLevel = false) {
   enemies.length = 0; fx.clear(); crowd.begin(); crowd.end();
   if (!keepLevel) { hero.level = 1; hero.exp = 0; hero.stats = loadStats(); }
   hero.maxHp = maxHealth(); hero.comboIdx = 0; hero.lightCount = 0; hero.lightRecovery = 0;
-  hero.lastAtkT = null; hero.flowSense = null; hero.flowRun = 0;
+  hero.flowSense = null; hero.flowRun = 0;
   UI.statSelect.hidden = true; UI.hud.inert = false;
   hero.x = 0; hero.z = 0; hero.face = 0; hero.hp = hero.maxHp; hero.hpLag = hero.maxHp; hero.rage = 0; hero.rageT = 0;
   hero.act = null; hero.dead = false; hero.iframe = 0; hero.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0;
