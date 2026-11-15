@@ -55,6 +55,7 @@ async function run() {
         }
         before.t = before.def.chainAt;
         await frame();
+        if (h.act === before && before.def.landingFX && before.hitDone) await frame();
         return h.act !== before ? h.act?.name : null;
       }
 
@@ -104,15 +105,17 @@ async function run() {
           state: 'hit', t: -1, pose: {}, vx: 0, vy: 0, vz: 0, y: 0 };
         g.enemies.push(target);
         let apex = 0, midairTurn = 0, turn = 0;
+        let landed = false;
         while (name && h.act?.name === name) {
           const height = h.target.rootY || 0;
           const angle = Math.abs((horizontal ? h.pose.rootYaw : h.pose.rootPitch) || 0);
           apex = Math.max(apex, height);
           turn = Math.max(turn, angle);
           if (height >= 0.55) midairTurn = Math.max(midairTurn, angle);
+          landed ||= h.act.hitDone;
           await frame();
         }
-        jumpMoves.push({ name, apex, midairTurn, turn, travel: h.z - z0, damage: 1000 - target.hp });
+        jumpMoves.push({ name, apex, midairTurn, turn, landed, travel: h.z - z0, damage: 1000 - target.hp });
       }
 
       reset();
@@ -145,12 +148,14 @@ async function run() {
       assert.equal(move('N', 'B', heavy), heavy ? 'RETREAT_SWEEP' : 'BACKCUT');
       assert.equal(move('B', 'B', heavy), heavy ? 'FIN2' : 'DOWNCUT');
     }
+    assert.equal(move('B', 'N', false), 'AIR_SLASH');
     assert.equal(results.forwardFlip, 'JUMP_FLIP');
     assert.equal(results.forwardSlam, 'L6');
     assert.equal(results.fallingCut, 'DOWNCUT');
     assert.equal(results.backSlam, 'BACK_LEAP');
     assert.ok(results.high >= 1.2 && results.hit && results.targetDamage > 0 && results.rearTravel < -2 && Math.abs(results.face) < 0.01);
     assert.deepEqual(results.jumpMoves.map(move => move.name), ['JUMP_FLIP', 'JUMP_SPIN']);
+    assert.deepEqual(results.jumpMoves.map(move => move.landed), [true, false]);
     for (const move of results.jumpMoves) {
       assert.ok(move.apex >= 1.2 && move.midairTurn > Math.PI && move.turn >= 6 && move.travel > 2, JSON.stringify(move));
     }

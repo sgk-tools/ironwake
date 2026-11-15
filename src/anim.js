@@ -186,7 +186,7 @@ export const HERO_ACTIONS = {
   },
   // stick pulled back during a combo: turn and launch upward
   UPPER: {
-    dur: 0.62, active: [0.15, 0.3], chainAt: 0.36, dmg: 28, kb: 2, up: 9, heavy: true, sound: 'swingHeavy', type: 'sweep',
+    dur: 0.62, active: [0.15, 0.3], chainAt: 0.36, dmg: 28, kb: 2, up: 9, launcher: true, heavy: true, sound: 'swingHeavy', type: 'sweep',
     keys: [
       [0, { ...HERO.idle, uarmR: [0.5, 0, -0.3], farmR: [-0.3, 0, 0], handR: [2.3, 0, 0], torso: [0.45, 0, 0], rootY: -0.32 }],
       [0.13, { ...HERO.idle, uarmR: [0.6, 0, -0.3], farmR: [-0.3, 0, 0], handR: [2.3, 0, 0], torso: [0.5, 0, 0], thighR: [-0.8, 0, 0], shinR: [1.2, 0, 0], rootY: -0.4 }, 'out'],
@@ -540,7 +540,7 @@ const DRAGPOSE = (s) => ({
   cloak: [1.1, 0, 0], rootY: -0.12,
 });
 HERO_ACTIONS.DRAG = {
-  dur: 0.75, active: [0.38, 0.52], chainAt: 0.54, dmg: 34, kb: 4, up: 8, heavy: true, ground: true, lunge: [0.04, 0.4, 9], sound: 'swingHeavy', type: 'sweep',
+  dur: 0.75, active: [0.38, 0.52], chainAt: 0.54, dmg: 34, kb: 4, up: 8, launcher: true, heavy: true, ground: true, lunge: [0.04, 0.4, 9], sound: 'swingHeavy', type: 'sweep',
   keys: [
     [0, HERO.idle],
     [0.1, DRAGPOSE(1), 'out'],
@@ -562,6 +562,11 @@ const withEnd = (keys, t, end = HERO.idle) => [...keys, [t, end, 'io']];
 HERO_ACTIONS.L1 = { ...HERO_ACTIONS.L1, dur: 0.5, active: [0.12, 0.26], chainAt: 0.28, keys: withEnd(cut('R2L'), 0.5) };
 HERO_ACTIONS.L2 = { ...HERO_ACTIONS.L2, dur: 0.5, active: [0.12, 0.26], chainAt: 0.28, keys: withEnd(cut('L2R'), 0.5) };
 HERO_ACTIONS.CROSS = { ...HERO_ACTIONS.CROSS, dur: 0.52, active: [0.13, 0.28], chainAt: 0.3, keys: withEnd(cut('HIGH_R_LOW_L'), 0.52) };
+const airSlash = HERO_ACTIONS.CROSS;
+HERO_ACTIONS.AIR_SLASH = {
+  ...airSlash, dmg: 32, kb: 4, up: 2, lunge: [0.02, 0.29, 9],
+  keys: airSlash.keys.map(([t, p, e]) => [t, { ...p, rootY: (p.rootY || 0) + 1.55 * Math.sin(Math.PI * t / airSlash.dur) }, e]),
+};
 HERO_ACTIONS.CROSS2 = { ...HERO_ACTIONS.CROSS, keys: withEnd(cut('HIGH_L_LOW_R'), 0.52) };
 HERO_ACTIONS.L1B = { ...HERO_ACTIONS.L1B, dur: 0.52, active: [0.13, 0.28], chainAt: 0.3, keys: withEnd(cut('LOW_R_HIGH_L'), 0.52) };
 HERO_ACTIONS.L2B = { ...HERO_ACTIONS.L1B, keys: withEnd(cut('LOW_L_HIGH_R'), 0.52) };
@@ -635,7 +640,7 @@ HERO_ACTIONS.BACK_LEAP = {
 // Forward jump attacks use different rotation axes and complete a full turn before landing.
 const jumpFlip = HERO_ACTIONS.RFLIP;
 HERO_ACTIONS.JUMP_FLIP = {
-  ...jumpFlip, dur: 0.72, active: [0.14, 0.52], chainAt: 0.55, lunge: [0.08, 0.46, 8.2],
+  ...jumpFlip, dur: 0.72, active: [0.14, 0.52], chainAt: 0.55, landingFX: 0.54, lunge: [0.08, 0.46, 8.2],
   keys: [
     [0, HERO.idle],
     [0.09, { ...jumpFlip.keys[1][1], rootY: -0.28 }, 'out'],

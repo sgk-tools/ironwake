@@ -394,10 +394,12 @@ class FX {
     const m = new THREE.Mesh(this.orbGeo, this.orbMat); m.position.set(x, 0.5, z); scene.add(m);
     this.orbs.push({ m, x, z, t: 0 });
   }
-  trailPush(base, tip, on) {
+  trailPush(base, tip, on, chargedSpin) {
     this.trailHist.unshift([base.clone(), tip.clone()]);
     if (this.trailHist.length > this.trailN) this.trailHist.pop();
-    this.trailOn += ((on ? 1 : 0) - this.trailOn) * (on ? 0.6 : 0.25);
+    if (on) this.trailMat.uniforms.color.value.setHex(chargedSpin ? 0xffe6a2 : 0xff9a60);
+    const strength = on ? (chargedSpin ? 1.65 : 1) : 0;
+    this.trailOn += (strength - this.trailOn) * (on ? 0.6 : 0.25);
   }
   update(dt) {
     const { _m, _q, _v, _s } = this;
@@ -885,7 +887,13 @@ function startLight(prev, dir = readCutDirection(), spin) {
   const facing = previous?.cutFacing ?? hero.face;
   const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
   const next = pickLight(prev, dir);
-  const name = spin || next;
+  const followLaunch = prev && previous?.def.launcher && !dir;
+  const name = spin || (followLaunch ? 'AIR_SLASH' : next);
+  const target = followLaunch && previous.launchTarget;
+  if (target && !target.dead && target.y > 0.25 && Math.hypot(target.x - hero.x, target.z - hero.z) < 6) {
+    hero.face = Math.atan2(target.x - hero.x, target.z - hero.z);
+    hero.aimNext = false;
+  }
   startDirectedCut(name, dir, facing);
   hero.act.light = true;
   hero.act.mono = hero.monoRun;
@@ -1271,7 +1279,7 @@ function updateHero(dt) {
       h.spinLoops++;
       startAction(h.spinLoops < (h.spinTarget || 1) ? 'SPIN_LOOP' : 'SPIN_OUT');
     } else if (d.type && !finishingDodgeCut(a) && a.t >= Math.max(d.chainAt, d.active[1]) && a.queued
-      && (!d.impact || a.hitDone) && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
+      && (!(d.impact || d.landingFX) || a.hitDone) && (a.queued === 'heavy' || !a.light || h.lightCount < lightLimit())) {
       if (a.queued === 'heavy') {
         delete h.pendingActions.heavy;
         startFinisher(a);
@@ -1317,11 +1325,30 @@ function updateHero(dt) {
   h.base.copy(h.blade.hilt); h.sword.localToWorld(h.base);
   h.tip.copy(h.blade.tip); h.sword.localToWorld(h.tip);
   const a = h.act, attacking = !holdingTurn && a && a.def.type && a.t >= a.def.active[0] - 0.05 && a.t <= a.def.active[1] + 0.05;
-  tmpV.copy(h.blade.trail); h.sword.localToWorld(tmpV);
-  fx.trailPush(tmpV, h.tip, attacking);
+  const chargedSpin = attacking && HEAVY_SPIN.has(a.name);
+  if (chargedSpin) tmpV.copy(h.base);
+  else { tmpV.copy(h.blade.trail); h.sword.localToWorld(tmpV); }
+  fx.trailPush(tmpV, h.tip, attacking, chargedSpin);
+  if (chargedSpin && a.name === 'SPIN_LOOP') {
+    if (a.nextSpinSpark == null) {
+      const charge = h.chargeLv || 0;
+      fx.hitFlash(h.tip.x, h.tip.y, h.tip.z, true);
+      fx.ring(h.x, h.z, 3.2 + 0.25 * charge, 0xffedbd, 0.28);
+      fx.ring(h.x, h.z, 4.6 + 0.35 * charge, 0xff9838, 0.45);
+      G.shake = Math.max(G.shake, 0.22 + 0.05 * charge);
+    }
+    if (a.t >= (a.nextSpinSpark ?? 0)) {
+      fx.spark(h.tip.x, Math.max(0.15, h.tip.y), h.tip.z, 5);
+      a.nextSpinSpark = a.t + 0.04;
+    }
+  }
   if (!holdingTurn && a && a.def.ground && h.tip.y < 0.25 && Math.random() < 0.7) fx.spark(h.tip.x, 0.05, h.tip.z, 3);
   if (!holdingTurn && a && a.def.type && a.t >= a.def.active[0] && a.t <= a.def.active[1]) heroHits(a);
   if (a && a.def.impact && !a.hitDone && a.t >= a.def.impact) { a.hitDone = true; impact(a); }
+  if (a?.def.landingFX && !a.hitDone && a.t >= a.def.landingFX) {
+    a.hitDone = true;
+    slamFX(h.tip.x, h.tip.z, HERO_ACTIONS.L6.radius, false);
+  }
   // pickups
   for (let i = fx.orbs.length - 1; i >= 0; i--) {
     const o = fx.orbs[i];
@@ -1388,10 +1415,11 @@ function heroHits(a) {
   for (const e of enemies) {
     if (e.dead || e.lastHit === h.attackId) continue;
     const def = ENEMY[e.type];
-    if (bodyHit(e.x, e.z, def.radius)) { e.lastHit = h.attackId; any = true; damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, true, undefined, undefined, bonusLift); continue; }
-    if (bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
+    const hitBody = bodyHit(e.x, e.z, def.radius);
+    if (hitBody || bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
-      damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, !!d.heavy, undefined, undefined, bonusLift);
+      damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, hitBody || !!d.heavy, undefined, undefined, bonusLift);
+      if (d.launcher && !e.dead) a.launchTarget ||= e;
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && (boss.y || 0) < 1.5 && boss.lastHit !== h.attackId && bladeTouches(boss.x, boss.z, bossRadius(), 0, 4)) {
@@ -1404,13 +1432,17 @@ function heroHits(a) {
   if (any) { G.hitstop = Math.max(G.hitstop, (a.name === 'SPIN_LOOP' || a.name === 'RSPIN2' || a.name === 'SPIN1' || a.name === 'L4') ? 0.025 : 0.055); sfx.play('hit'); }
 }
 
+function slamFX(x, z, radius, rage) {
+  fx.ring(x, z, radius * 1.2, rage ? 0xff3010 : 0xffa060, 0.5);
+  fx.spark(x, 0.2, z, 26);
+  G.shake = Math.max(G.shake, rage ? 1 : 0.55);
+  sfx.play('slam');
+}
+
 function impact(a) {
   const d = a.def, h = hero, mult = (h.rageT > 0 ? 1.6 : 1) * dmgMul();
   const cx = a.name === 'RAGE' ? h.x : h.tip.x, cz = a.name === 'RAGE' ? h.z : h.tip.z;
-  fx.ring(cx, cz, d.radius * 1.2, a.name === 'RAGE' ? 0xff3010 : 0xffa060, 0.5);
-  fx.spark(cx, 0.2, cz, 26);
-  G.shake = Math.max(G.shake, a.name === 'RAGE' ? 1 : 0.55);
-  sfx.play('slam');
+  slamFX(cx, cz, d.radius, a.name === 'RAGE');
   for (const e of enemies) {
     if (e.dead) continue;
     const dist = Math.hypot(e.x - cx, e.z - cz);
