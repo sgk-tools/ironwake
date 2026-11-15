@@ -5,6 +5,7 @@ import { Sfx } from './audio.js';
 import { EXTRA_WEAPONS } from './extra-weapons.js';
 import { BUILTIN_WEAPONS, STANDARD_DECO, applyGrowth, pulseWeapon, GROW_TEXT, GROW_MAX } from './weapons.js';
 import { JOINTS, ORDER, HERO, HERO_ACTIONS, heroRun, sampleKeys, smoothPose, lerpPose, gruntPose, bossPose, CUT_VARIANTS, DOUBLE_CUTS } from './anim.js';
+import { buildSlashLessons, SLASH_DIRECTIONS, SLASH_GROUPS } from './slash-lessons.js';
 
 // ======================================================================= setup
 const $ = (s) => document.querySelector(s);
@@ -715,10 +716,10 @@ function startAction(name) {
 }
 
 // Neutral light chains have a pool of moves per step; awakening has its own chain.
-function comboChain() {
-  const technique = hero.stats.technique;
-  if (hero.rageT > 0) {
-    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(hero.level >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(hero.level >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+function comboChain(actor = hero) {
+  const technique = actor.stats.technique;
+  if (actor.rageT > 0) {
+    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(actor.level >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(actor.level >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
   // higher technique adds quick / weighty versions and double cuts to the pools, and longer strings
   const t = technique;
@@ -743,6 +744,9 @@ function readDir() {
   const [mx, my] = input.move();
   if (Math.hypot(mx, my) < 0.3) return null;
   const rel = angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face;   // < 0: hero's right
+  return fourWayDirection(rel);
+}
+function fourWayDirection(rel) {
   if (Math.abs(rel) < 0.8) return 'fwd';
   if (Math.abs(rel) > 2.3) return 'back';
   return rel < 0 ? 'right' : 'left';
@@ -833,18 +837,19 @@ function reverseCut(previousDirection, direction) {
   return null;
 }
 
-function pickLight(prev, dir = readCutDirection()) {
+function pickLight(prev, dir = readCutDirection(), actor = hero, choose = pickFrom) {
   if (!prev) {
-    hero.comboIdx = 0; hero.lightCount = 1;
-    if (!dir) hero.neutralChain++;
-    return dir ? DIRECTIONAL_CUTS[dir].open : pickFrom(comboChain()[0], null);
+    actor.comboIdx = 0; actor.lightCount = 1;
+    if (!dir) actor.neutralChain++;
+    return dir ? DIRECTIONAL_CUTS[dir].open : choose(comboChain(actor)[0], null);
   }
-  hero.lightCount = (hero.lightCount || 0) + 1;
-  const chain = comboChain();
-  hero.comboIdx = (hero.comboIdx + 1) % chain.length;
+  actor.lightCount = (actor.lightCount || 0) + 1;
+  const chain = comboChain(actor);
+  actor.comboIdx = (actor.comboIdx + 1) % chain.length;
   if (!dir) {
-    const step = (hero.lightCount - 1) % 6;
-    const alternate = (hero.neutralChain + Math.floor((hero.lightCount - 1) / 6)) % 2;
+    if (actor.act?.def.launcher) return 'AIR_SLASH';
+    const step = (actor.lightCount - 1) % 6;
+    const alternate = (actor.neutralChain + Math.floor((actor.lightCount - 1) / 6)) % 2;
     if (step === 1) {
       const spin = alternate ? 'SPIN1' : 'REVSPIN';
       return spin === prev ? (spin === 'SPIN1' ? 'REVSPIN' : 'SPIN1') : spin;
@@ -853,10 +858,10 @@ function pickLight(prev, dir = readCutDirection()) {
       const cut = alternate ? 'JUMP_SPIN' : 'JUMP_FLIP';
       return cut === prev ? (cut === 'JUMP_SPIN' ? 'JUMP_FLIP' : 'JUMP_SPIN') : cut;
     }
-    return pickFrom(chain[hero.comboIdx], prev);
+    return choose(chain[actor.comboIdx], prev);
   }
 
-  const previous = hero.act;
+  const previous = actor.act;
   const reversal = reverseCut(previous?.cutDir, dir);
   if (reversal) return reversal;
   if (!previous?.cutDir && dir === 'FWD') return 'STEP_CUT';
@@ -865,7 +870,7 @@ function pickLight(prev, dir = readCutDirection()) {
   const step = previous?.cutDir === dir ? previous.cutStep : 0;
   // The 3rd cut repeating the same direction stays on the fixed table (forward x3 = big leap, back x3 = back jump);
   // every other cut from the 3rd on is chosen by the count-aware table.
-  if (hero.lightCount >= 4 || (hero.lightCount === 3 && step === 0)) return extendedLight(dir, hero.lightCount, step, prev);
+  if (actor.lightCount >= 4 || (actor.lightCount === 3 && step === 0)) return extendedLight(dir, actor.lightCount, step, prev);
   const name = pool[step % pool.length];
   return name === prev ? pool[(step + 1) % pool.length] : name;
 }
@@ -886,9 +891,9 @@ function startLight(prev, dir = readCutDirection(), spin) {
   const previous = hero.act;
   const facing = previous?.cutFacing ?? hero.face;
   const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
-  const next = pickLight(prev, dir);
+  const next = pickLight(prev, dir, hero, tutorialChoice('light', dir, !prev));
   const followLaunch = prev && previous?.def.launcher && !dir;
-  const name = spin || (followLaunch ? 'AIR_SLASH' : next);
+  const name = spin || next;
   const target = followLaunch && previous.launchTarget;
   if (target && !target.dead && target.y > 0.25 && Math.hypot(target.x - hero.x, target.z - hero.z) < 6) {
     hero.face = Math.atan2(target.x - hero.x, target.z - hero.z);
@@ -900,6 +905,18 @@ function startLight(prev, dir = readCutDirection(), spin) {
   hero.act.cutFacing = prev || dir ? facing : hero.face;
   hero.act.cutDir = dir;
   hero.act.cutStep = step;
+  recordSlashCommand('light', dir, name, !prev);
+}
+
+function pickFinisher(count, dir, action, choose = pickFrom) {
+  if (count >= 3) return finisherFor(count, dir, action.name);
+  if (!dir) return choose(FINISHERS[count], null);
+  const reversal = reverseCut(action.cutDir, dir);
+  const pool = DIRECTIONAL_CUTS[dir].heavy;
+  const name = reversal || (!action.cutDir && dir === 'FWD' ? 'STEP_CUT'
+    : !action.cutDir && dir === 'BACK' ? 'RETREAT_SWEEP'
+    : pool[Number(count > 1)]);
+  return name === action.name ? pool.find(candidate => candidate !== action.name) || name : name;
 }
 
 function startFinisher(action) {
@@ -908,22 +925,12 @@ function startFinisher(action) {
   const count = h.lightCount || 0;
   if (count <= 0) { beginCharge(); startAction('CHARGE'); return; }
 
-  const dir = action.queuedHeavyDir || action.cutDir;
-  let name;
-  if (count >= 3) {
-    name = finisherFor(count, dir, action.name);
-  } else if (!dir) {
-    name = pickFrom(FINISHERS[Math.min(count, 5)], null);
-  } else {
-    const reversal = reverseCut(action.cutDir, dir);
-    const pool = DIRECTIONAL_CUTS[dir].heavy;
-    name = reversal || (!action.cutDir && dir === 'FWD' ? 'STEP_CUT'
-      : !action.cutDir && dir === 'BACK' ? 'RETREAT_SWEEP'
-      : pool[Number(count > 1)]);
-    if (name === action.name) name = pool.find(candidate => candidate !== action.name) || name;
-  }
+  const pressedDir = action.queuedHeavyDir || null;
+  const dir = pressedDir || action.cutDir;
+  const name = pickFinisher(count, dir, action, tutorialChoice('heavy', pressedDir));
   startDirectedCut(name, dir, action.cutFacing ?? h.face);
   h.lightCount = 0;
+  recordSlashCommand('heavy', pressedDir, name);
   if (action.queuedHeavyDir) tutorialSuccess('slash');
 }
 
@@ -1090,7 +1097,8 @@ function queueLateSideSpin(a) {
 function startDodgeCut(roll) {
   const h = hero;
   const from = roll.fromCount || 0;
-  const name = from > 0 ? dodgeCutFor(from, readCutDirection()) : (DODGE_CUT[readDir()] || 'L1');   // from idle: the fixed four-way table
+  const dir = readCutDirection();
+  const name = from > 0 ? dodgeCutFor(from, dir) : (DODGE_CUT[readDir()] || 'L1');   // from idle: the fixed four-way table
   const rollFacing = h.face;
   const [mx, my] = input.move();
   if (Math.hypot(mx, my) > 0.3) h.face = Math.atan2(-mx, my);
@@ -1099,6 +1107,7 @@ function startDodgeCut(roll) {
   h.lightCount = 1; h.comboIdx = 0; h.act.light = true;
   h.act.dodgeTime = roll.t;
   h.act.dodgeFacing = rollFacing;
+  recordSlashCommand('counter', dir, name, from === 0);
   tutorialSuccess('dodgeCut');
 }
 
@@ -2236,17 +2245,71 @@ const TUTORIAL_LESSONS = [
   { id: 'clash', name: '打ち合い', boss: true, hint: slash => `ボスの武器が光った後、白い線が緑に入ったら${slash}を押す。` },
 ];
 let tutorial = null;
+let slashLessons;
+let selectedSlash = null;
+
+function getSlashLessons() {
+  return slashLessons ??= buildSlashLessons({
+    pickLight, pickFinisher, dodgeCutFor,
+    idleCounter(dir) {
+      return (dir && DODGE_CUT[fourWayDirection(CUT_ANGLES[dir])]) || 'L1';
+    },
+    maxCombo: rank => LIGHT_CAP[rank],
+  });
+}
+
+function tutorialKeys() {
+  return matchMedia('(pointer: coarse)').matches ? ['「斬」', '「重」', '「避」'] : ['J', 'K', 'Space'];
+}
+
+function drawSlashCommand() {
+  if (tutorial.resetSlash) {
+    $('#tutorial-hint').textContent = '動作が終わったら、最初の入力から。';
+    return;
+  }
+  const { commands, awaken } = tutorial.pattern;
+  const [slash, heavy, dodge] = tutorialKeys();
+  const step = commands[tutorial.step];
+  const direction = step.dir ? `${SLASH_DIRECTIONS[step.dir]}＋` : '方向を離して';
+  const prefix = commands.length > 1 && tutorial.step > 0 ? '動作中に ' : '';
+  const command = step.kind === 'counter' ? `${dodge}で回避 → 回避中に ${direction}${slash}` : `${direction}${step.kind === 'heavy' ? heavy : slash}`;
+  $('#tutorial-hint').textContent = `${tutorial.step + 1} / ${commands.length}　${awaken ? '覚醒中　' : ''}${prefix}${command}`;
+}
+
+function tutorialChoice(kind, dir, opening = false) {
+  if (!tutorial?.pattern || tutorial.resetSlash) return pickFrom;
+  const step = tutorial.pattern.commands[opening ? 0 : tutorial.step];
+  if (!step || step.kind !== kind || step.dir !== dir) return pickFrom;
+  return (pool, prev) => pool.includes(step.move) && (step.move !== prev || pool.every(move => move === prev))
+    ? step.move : pickFrom(pool, prev);
+}
+
+function recordSlashCommand(kind, dir, move, opening = false) {
+  if (!tutorial?.pattern || tutorial.resetSlash || tutorial.count >= TUTORIAL_REPS) return;
+  if (opening) tutorial.step = 0;
+  const step = tutorial.pattern.commands[tutorial.step];
+  if (step.kind !== kind || step.dir !== dir || step.move !== move) {
+    tutorial.resetSlash = true;
+    $('#tutorial-status').textContent = '表示された操作に合わせよう。';
+  } else if (++tutorial.step === tutorial.pattern.commands.length) {
+    tutorial.resetSlash = true;
+    tutorialSuccess('pattern');
+  } else {
+    $('#tutorial-status').textContent = '';
+  }
+  drawSlashCommand();
+}
 
 function drawTutorialProgress() {
   $('#tutorial-progress').textContent = `${tutorial.count} / ${TUTORIAL_REPS} 回`;
 }
 
-function setTutorialLesson(index) {
-  const lesson = TUTORIAL_LESSONS[index];
-  tutorial = { index, lesson, count: 0, advanceAt: Infinity, nextStrikeAt: G.time + 0.8 };
-  const keys = matchMedia('(pointer: coarse)').matches ? ['「斬」', '「重」', '「避」'] : ['J', 'K', 'Space'];
-  $('#tutorial-name').textContent = `${index + 1} / ${TUTORIAL_LESSONS.length}　${lesson.name}`;
-  $('#tutorial-hint').textContent = lesson.hint(...keys);
+function setTutorialLesson(index, pattern = null) {
+  const lesson = pattern ? { id: 'pattern', name: pattern.name } : TUTORIAL_LESSONS[index];
+  tutorial = { index, lesson, pattern, step: 0, resetSlash: false, count: 0, advanceAt: Infinity, nextStrikeAt: G.time + 0.8 };
+  $('#tutorial-name').textContent = pattern ? lesson.name : `${index + 1} / ${TUTORIAL_LESSONS.length}　${lesson.name}`;
+  if (pattern) drawSlashCommand();
+  else $('#tutorial-hint').textContent = lesson.hint(...tutorialKeys());
   $('#tutorial-status').textContent = '';
   const timing = $('#tutorial-timing');
   timing.hidden = !lesson.boss;
@@ -2275,17 +2338,29 @@ function tutorialSuccess(id) {
 }
 
 function updateTutorial() {
-  if (G.time >= tutorial.advanceAt && !hero.act?.def.clashLocked) {
+  const { pattern } = tutorial;
+  if (G.time >= tutorial.advanceAt && (pattern ? !hero.act : !hero.act?.def.clashLocked)) {
     const next = tutorial.index + 1;
-    if (next < TUTORIAL_LESSONS.length) {
+    if (!pattern && next < TUTORIAL_LESSONS.length) {
       setTutorialLesson(next);
     } else {
       G.state = 'tutorial-complete';
       sfx.stopMusic();
       UI.hud.hidden = true;
-      $('#tutorial-summary').textContent = `全${TUTORIAL_LESSONS.length}課題を${TUTORIAL_REPS}回ずつ成功した。`;
+      $('#tutorial-summary').textContent = pattern ? `${pattern.name}を${TUTORIAL_REPS}回成功した。` : `全${TUTORIAL_LESSONS.length}課題を${TUTORIAL_REPS}回ずつ成功した。`;
+      $('#btn-other-slash').hidden = !pattern;
       $('#tutorial-complete').hidden = false;
       $('#btn-tutorial-title').focus();
+    }
+    return;
+  }
+  if (pattern) {
+    if (pattern.awaken) hero.rageT = 12;
+    if (!hero.act && (tutorial.resetSlash || tutorial.step > 0)) {
+      Object.assign(hero, { face: 0, neutralChain: 0, lightRecovery: 0 });
+      tutorial.step = 0;
+      tutorial.resetSlash = false;
+      drawSlashCommand();
     }
     return;
   }
@@ -2321,7 +2396,7 @@ function resetGame(keepLevel = false) {
   for (const k in hudCache) delete hudCache[k];
 }
 
-function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal', mode = 'campaign') {
+function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal', mode = 'campaign', pattern = null) {
   G.mode = mode;
   G.difficulty = difficulty === 'easy' || difficulty === 'hard' ? difficulty : 'normal';
   const bossOnly = G.mode === 'boss';
@@ -2355,7 +2430,7 @@ function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal
     UI.bossBar.hidden = true;
     input.resetButtons(); input.resetStick(); input.keys.clear();
     $('#tutorial-guide').hidden = false;
-    setTutorialLesson(0);
+    setTutorialLesson(0, pattern);
   } else if (bossOnly) {
     showBanner(stage().boss.name, '決戦');
     G.introT = 0.9;
@@ -2609,6 +2684,55 @@ function setupBossBattle() {
   });
 }
 
+function setupSlashTraining() {
+  const trigger = $('#btn-slash-tutorial'), modal = $('#slash-setup'), list = $('#slash-options');
+  const close = $('#btn-slash-close'), titleContent = $('.title-inner');
+  function setOpen(open) {
+    modal.hidden = !open;
+    titleContent.inert = open;
+    trigger.setAttribute('aria-expanded', String(open));
+    (open ? close : trigger).focus();
+  }
+  trigger.addEventListener('click', () => {
+    if (!list.children.length) {
+      const lessons = getSlashLessons();
+      for (const group of SLASH_GROUPS) {
+        const moves = lessons.filter(lesson => lesson.group === group);
+        if (!moves.length) continue;
+        const details = document.createElement('details'), summary = document.createElement('summary'), buttons = document.createElement('div');
+        summary.textContent = `${group}（${moves.length}）`;
+        details.open = !list.children.length;
+        buttons.className = 'slash-moves';
+        for (const lesson of moves) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = lesson.name;
+          button.dataset.slash = lesson.move;
+          button.addEventListener('click', () => { setOpen(false); startTutorial(lesson); });
+          buttons.append(button);
+        }
+        details.append(summary, buttons);
+        list.append(details);
+      }
+    }
+    setOpen(true);
+  });
+  close.addEventListener('click', () => setOpen(false));
+  modal.addEventListener('click', event => { if (event.target === modal) setOpen(false); });
+  modal.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
+    if (event.key === 'Tab') {
+      const focusable = [...modal.querySelectorAll('button, summary')].filter(el => el.offsetHeight);
+      const next = event.shiftKey ? focusable.at(-1) : focusable[0];
+      if (document.activeElement === (event.shiftKey ? focusable[0] : focusable.at(-1))) {
+        event.preventDefault();
+        next.focus();
+      }
+    }
+  });
+}
+
 async function boot() {
   try {
     await loadAll();
@@ -2631,19 +2755,28 @@ async function boot() {
   }
   setupWeaponPicker();
   setupBossBattle();
+  setupSlashTraining();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS, getSlashLessons };
 }
 
 $('.difficulty-choice').addEventListener('change', refreshContinue);
 UI.start.addEventListener('click', () => startGame(0, 1, 0, undefined, selectedDifficulty()));
-const startTutorial = () => startGame(0, 1, 0, undefined, 'normal', 'tutorial');
-$('#btn-tutorial').addEventListener('click', startTutorial);
-$('#btn-tutorial-retry').addEventListener('click', startTutorial);
+function startTutorial(pattern = null) {
+  selectedSlash = pattern;
+  const technique = pattern?.technique ?? 1;
+  startGame(0, technique, 0, { technique }, 'normal', 'tutorial', pattern);
+}
+$('#btn-tutorial').addEventListener('click', () => startTutorial());
+$('#btn-tutorial-retry').addEventListener('click', () => startTutorial(selectedSlash));
+$('#btn-other-slash').addEventListener('click', () => {
+  returnToTitle();
+  $('#btn-slash-tutorial').click();
+});
 $('#btn-tutorial-title').addEventListener('click', () => {
   returnToTitle();
-  $('#btn-tutorial').focus();
+  $(selectedSlash ? '#btn-slash-tutorial' : '#btn-tutorial').focus();
 });
 $('#btn-continue').addEventListener('click', () => {
   const difficulty = selectedDifficulty();
