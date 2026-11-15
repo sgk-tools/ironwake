@@ -271,8 +271,8 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
-    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（前後左右・斜めで技が変化、回避中は反撃） ／ <b>重</b>長押しで溜めて離すと回転斬り（回避中から溜められ、長く溜めると威力と吹き飛びが増える）、斬の途中で方向＋重を押すと締め技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 横か後ろへ倒して<b>斬</b>で見切り斬り</div>
-    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（前後左右・斜めで技が変化、回避中は反撃） ／ <b>K</b> 長押しで溜め回転斬り（回避中から溜め可）・斬の途中で方向＋Kを押すと締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 横か後ろ＋<b>J</b> で見切り斬り</div>
+    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（1回押すと1回攻撃。前後左右・斜めで技が変化、回避中は反撃。同じ斬の連打は威力が落ち、方向・重・避を挟むと戻る） ／ <b>重</b>長押しで溜めて離すと回転斬り（回避中から溜められ、長く溜めると威力と吹き飛びが増える）、斬の途中で方向＋重を押すと締め技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 横か後ろへ倒して<b>斬</b>で見切り斬り</div>
+    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（1回押すと1回攻撃。前後左右・斜めで技が変化、回避中は反撃。同じ斬の連打は威力が落ち、方向・K・Spaceを挟むと戻る） ／ <b>K</b> 長押しで溜め回転斬り（回避中から溜め可）・斬の途中で方向＋Kを押すと締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 横か後ろ＋<b>J</b> で見切り斬り</div>
   </div>
   <div id="weapon-picker" class="overlay" role="dialog" aria-modal="true" aria-labelledby="weapon-picker-title" hidden>
     <div class="panel">
@@ -347,7 +347,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <div class="stat-options">
         <button type="button" class="stat-option" data-stat="health" title="最大体力が増える"><strong>体力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
         <button type="button" class="stat-option" data-stat="power" title="ダメージと吹き飛ばしが強くなる"><strong>攻撃力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
-        <button type="button" class="stat-option" data-stat="technique" title="斬を長押ししたときの連撃数が増える"><strong>技術</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
+        <button type="button" class="stat-option" data-stat="technique" title="斬を連打したとき、止まらずに続けられる連撃数が増える"><strong>技術</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
         <button type="button" class="stat-option" data-stat="dodge" title="回避動作が速くなり、無敵時間が延びる"><strong>回避</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span></button>
         <button type="button" class="stat-option" data-stat="awakening"><strong>覚醒</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">覚醒ゲージが早くたまり、効果時間が延びる</span></button>
       </div>
