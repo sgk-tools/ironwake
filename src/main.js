@@ -2265,23 +2265,27 @@ function tutorialKeys() {
   return matchMedia('(pointer: coarse)').matches ? ['「斬」', '「重」', '「避」'] : ['J', 'K', 'Space'];
 }
 
-function drawSlashCommand() {
-  if (tutorial.resetSlash) {
-    $('#tutorial-hint').textContent = '動作が終わったら、最初の入力から。';
-    return;
-  }
-  const { commands } = tutorial.pattern;
+function buildSlashSteps(commands) {
   const [slash, heavy] = tutorialKeys();
-  const step = commands[tutorial.step];
   const touch = matchMedia('(pointer: coarse)').matches;
-  const direction = SLASH_DIRECTIONS[step.dir];
-  const button = step.kind === 'heavy' ? heavy : slash;
-  const command = direction
-    ? (touch ? `${direction.stick}にスティックを倒したまま${button}` : `${direction.keys}を押しながら ${button}`)
-    : (touch ? `スティックから指を離して${button}` : `方向キーを離して ${button}`);
-  const prefix = tutorial.step > 0 ? '斬っている間に ' : '';
-  const count = commands.length > 1 ? `${tutorial.step + 1} / ${commands.length}　` : '';
-  $('#tutorial-hint').textContent = count + prefix + command;
+  const steps = commands.map(step => {
+    const item = document.createElement('li');
+    const direction = SLASH_DIRECTIONS[step.dir];
+    const button = step.kind === 'heavy' ? heavy : slash;
+    item.textContent = direction
+      ? (touch ? `${direction.stick}にスティックを倒したまま${button}` : `${direction.keys}を押しながら ${button}`)
+      : (touch ? `スティックから指を離して${button}` : `方向キーを離して ${button}`);
+    return item;
+  });
+  $('#tutorial-steps').replaceChildren(...steps);
+  markSlashStep();
+}
+
+function markSlashStep() {
+  for (const [index, item] of Array.from($('#tutorial-steps').children).entries()) {
+    if (!tutorial.resetSlash && index === tutorial.step) item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+  }
 }
 
 function recordSlashCommand(kind, dir, move, opening = false) {
@@ -2290,14 +2294,14 @@ function recordSlashCommand(kind, dir, move, opening = false) {
   const step = tutorial.pattern.commands[tutorial.step];
   if (step.kind !== kind || step.dir !== dir || step.move !== move) {
     tutorial.resetSlash = true;
-    $('#tutorial-status').textContent = '表示された操作に合わせよう。';
+    $('#tutorial-status').textContent = '動作が終わったら、最初の手順から。';
   } else if (++tutorial.step === tutorial.pattern.commands.length) {
     tutorial.resetSlash = true;
     tutorialSuccess('pattern');
   } else {
     $('#tutorial-status').textContent = '';
   }
-  drawSlashCommand();
+  markSlashStep();
 }
 
 function drawTutorialProgress() {
@@ -2308,8 +2312,14 @@ function setTutorialLesson(index, pattern = null) {
   const lesson = pattern ? { id: 'pattern', name: pattern.name } : TUTORIAL_LESSONS[index];
   tutorial = { index, lesson, pattern, step: 0, resetSlash: false, count: 0, advanceAt: Infinity, nextStrikeAt: G.time + 0.8 };
   $('#tutorial-name').textContent = pattern ? lesson.name : `${index + 1} / ${TUTORIAL_LESSONS.length}　${lesson.name}`;
-  if (pattern) drawSlashCommand();
-  else $('#tutorial-hint').textContent = lesson.hint(...tutorialKeys());
+  $('#tutorial-guide').classList.toggle('slash-lesson', Boolean(pattern));
+  $('#tutorial-steps').hidden = !pattern;
+  if (pattern) {
+    $('#tutorial-hint').textContent = pattern.commands.length > 1 ? '2手目以降は、前の斬撃中に入力。' : '';
+    buildSlashSteps(pattern.commands);
+  } else {
+    $('#tutorial-hint').textContent = lesson.hint(...tutorialKeys());
+  }
   $('#tutorial-status').textContent = '';
   const timing = $('#tutorial-timing');
   timing.hidden = !lesson.boss;
@@ -2359,7 +2369,7 @@ function updateTutorial() {
       Object.assign(hero, { face: 0, neutralChain: 0, lightRecovery: 0 });
       tutorial.step = 0;
       tutorial.resetSlash = false;
-      drawSlashCommand();
+      markSlashStep();
     }
     return;
   }

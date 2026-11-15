@@ -20,7 +20,7 @@ async function run() {
     assert.equal(await buttons.count(), 7);
     await modal.getByRole('button', { name: '右上への斬り込み' }).tap();
     await page.locator('#tutorial-guide').waitFor();
-    assert.match(await page.locator('#tutorial-hint').textContent(), /右上にスティックを倒したまま「斬」/);
+    assert.match(await page.locator('#tutorial-steps').textContent(), /右上にスティックを倒したまま「斬」/);
     const touchDiagonal = await page.evaluate(async () => {
       const g = window.__game, h = g.hero();
       g.renderer.render = () => {};
@@ -54,10 +54,14 @@ async function run() {
       };
       const tap = key => { g.input.press(key); g.input.held.delete(key); };
       async function tryMove(lesson) {
-        for (const command of lesson.commands) {
+        const list = $('#tutorial-steps');
+        const items = [...list.children];
+        if (list.hidden || items.length !== lesson.commands.length) throw new Error(`${lesson.move}: missing steps`);
+        for (const [index, command] of lesson.commands.entries()) {
+          if (list.querySelector('[aria-current="step"]') !== items[index]) throw new Error(`${lesson.move}: wrong highlighted step`);
           const previous = h.act;
           if (previous) previous.t = Math.max(previous.def.chainAt, previous.def.active[1] + 0.002);
-          if (command.dir == null && !$('#tutorial-hint').textContent.includes('スティックから指を離して')) {
+          if (command.dir == null && !items[index].textContent.includes('スティックから指を離して')) {
             throw new Error(`${lesson.move}: missing neutral-stick instruction`);
           }
           direction(command.dir);
@@ -66,7 +70,9 @@ async function run() {
           if (h.act === previous) await frame();
           direction(null);
           if (h.act?.name !== command.move) throw new Error(`${lesson.move}: ${command.move} became ${h.act?.name}`);
+          if (list.hidden || items.some((item, i) => list.children[i] !== item)) throw new Error(`${lesson.move}: steps changed during the combo`);
         }
+        if (list.querySelector('[aria-current="step"]')) throw new Error(`${lesson.move}: still highlighting a finished step`);
       }
       const catalog = g.SLASH_LESSONS;
       for (const lesson of catalog) {
@@ -89,7 +95,20 @@ async function run() {
     const completed = page.getByRole('dialog', { name: 'チュートリアルクリア' });
     await completed.waitFor({ timeout: 5000 });
     await completed.getByRole('button', { name: 'ほかの斬撃を選ぶ' }).tap();
-    await modal.getByRole('button', { name: '閉じる' }).tap();
+    await modal.getByRole('button', { name: '後ろジャンプ斬り' }).tap();
+    const guide = page.locator('#tutorial-guide');
+    await guide.waitFor();
+    assert.equal(await page.locator('#tutorial-steps li:visible').count(), 3);
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 568, height: 320 }, { width: 852, height: 393 }]) {
+      await page.setViewportSize(size);
+      const panel = await guide.boundingBox();
+      for (const button of ['attack', 'heavy', 'dodge', 'rage']) {
+        const box = await page.locator('#btn-' + button).boundingBox();
+        assert.ok(panel.y + panel.height <= box.y || panel.x + panel.width <= box.x, JSON.stringify({ size, panel, button, box }));
+      }
+    }
+    await page.getByRole('button', { name: '一時停止' }).tap();
+    await page.getByRole('button', { name: 'タイトルへ戻る' }).tap();
     await page.locator('#btn-start').tap();
     await page.evaluate(() => {
       const { G } = window.__game;
@@ -107,7 +126,7 @@ async function run() {
       }
     }
     assert.deepEqual(errors, []);
-    console.log(`${lessons.length} slash lessons, three-repetition completion and separated HUD counters passed.`);
+    console.log(`${lessons.length} slash lessons, persistent numbered steps and separated HUD counters passed.`);
   } finally {
     await browser.close();
   }

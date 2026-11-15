@@ -143,7 +143,15 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 #tutorial-guide header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 #tutorial-progress { color: #ffdc99; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #tutorial-hint, #tutorial-status { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
+#tutorial-hint:empty, #tutorial-status:empty { display: none; }
 #tutorial-status { color: #ffdc99; }
+#tutorial-steps { margin: 5px 0 0; padding-inline-start: 1.5em; font-size: 13px; line-height: 1.4; }
+#tutorial-steps li { padding: 3px 5px; border-radius: 3px; }
+#tutorial-steps li[aria-current="step"] { background: #4a3322; color: #ffdc99; box-shadow: inset 2px 0 #d29148; }
+@media (orientation: landscape) and (max-height: 420px) {
+  #tutorial-guide.slash-lesson { left: var(--sl); transform: none; width: min(460px, calc(100% - var(--sl) - var(--sr) - 220px)); padding: 6px 10px; }
+  #tutorial-steps li { padding-block: 2px; }
+}
 #tutorial-timing { position: relative; margin-top: 7px; height: 9px; border-radius: 3px; background: #4a3528; overflow: hidden; }
 #tutorial-timing::after { content: ""; position: absolute; inset: 0 var(--timing-end) 0 var(--timing-start); background: #78be93; }
 #tutorial-timing i { position: absolute; inset: 0 auto 0 0; width: 3px; background: #fff4d0; z-index: 1; }
@@ -376,6 +384,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <section id="tutorial-guide" aria-labelledby="tutorial-name" hidden>
     <header><strong id="tutorial-name"></strong><span id="tutorial-progress"></span></header>
     <p id="tutorial-hint"></p>
+    <ol id="tutorial-steps" aria-label="操作手順" hidden></ol>
     <div id="tutorial-timing" aria-hidden="true" hidden><i></i></div>
     <p id="tutorial-status" role="status"></p>
   </section>
