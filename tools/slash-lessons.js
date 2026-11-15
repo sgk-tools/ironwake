@@ -226,8 +226,32 @@ async function run() {
           || objective.y + objective.height <= box.y || box.y + box.height <= objective.y, JSON.stringify({ size, objective, box }));
       }
     }
+    await page.evaluate(() => window.__game.gainExp(24));
+    const levelUp = page.getByRole('dialog', { name: 'レベルアップ' });
+    await levelUp.waitFor({ state: 'visible' });
+    for (const size of [{ width: 568, height: 280 }, { width: 568, height: 320 }, { width: 852, height: 393 }]) {
+      await page.setViewportSize(size);
+      await page.evaluate(() => {
+        const style = document.documentElement.style;
+        for (const [key, value] of Object.entries({ '--sl': '47px', '--sr': '47px', '--st': '12px', '--sb': '20px' })) {
+          style.setProperty(key, value);
+        }
+      });
+      const panel = levelUp.locator('.stat-panel');
+      const scroll = await panel.evaluate(el => ({ height: el.clientHeight, content: el.scrollHeight, offset: el.scrollTop }));
+      assert.ok(scroll.content <= scroll.height + 1 && scroll.offset === 0, JSON.stringify({ size, scroll }));
+      assert.equal(await panel.locator('.stat-portrait img:visible').count(), 1);
+      assert.equal(await panel.locator('.stat-effect-short:visible').count(), 5);
+      for (const stat of await panel.locator('.stat-option').all()) {
+        const box = await stat.boundingBox();
+        assert.ok(box && box.y >= 0 && box.y + box.height <= size.height, JSON.stringify({ size, box }));
+      }
+    }
+    await levelUp.locator('[data-stat="awakening"]').tap();
+    await levelUp.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => window.__game.hero().stats.awakening), 2);
     assert.deepEqual(errors, []);
-    console.log(`${lessons.length} slash lessons, forgiving vertical touch input, landscape hero clearance and separated HUD counters passed.`);
+    console.log(`${lessons.length} slash lessons, vertical touch input, landscape title and level-up layout, and HUD passed.`);
   } finally {
     await browser.close();
   }

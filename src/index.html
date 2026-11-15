@@ -233,7 +233,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .lu-lv { font-size: clamp(20px, 4vw, 36px); color: #ffd080; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 #000; }
 .lu-skip { margin-top: 10px; font-size: clamp(10px, 1.6vw, 13px); color: var(--ash-dim, #b9ab98); letter-spacing: 0.2em; }
 @keyframes lu-pop { 0% { opacity: 0; transform: scale(1.6); } 18% { opacity: 1; transform: scale(1); } 85% { opacity: 1; transform: scale(1); } 100% { opacity: 1; transform: scale(1); } }
-#stat-select { grid-template-rows: minmax(0, 1fr); background: rgba(10,5,4,0.55); -webkit-backdrop-filter: none; backdrop-filter: none; }
+#stat-select { grid-template-rows: minmax(0, 1fr); background: rgba(10,5,4,0.55); -webkit-backdrop-filter: none; backdrop-filter: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .stat-panel {
   box-sizing: border-box; width: min(900px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y;
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 27%); gap: clamp(8px, 2vw, 18px);
@@ -258,6 +258,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .stat-bar .filled { background: linear-gradient(#c3824b, #8c502a); box-shadow: inset 0 0 0 1px #ce9b69; }
 .stat-rank { text-align: right; color: #ffd8b0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stat-effect { grid-column: 1 / -1; color: #e9c3a5; font-size: clamp(10px, 1.6vw, 14px); }
+.stat-effect-short { display: none; }
 /* short landscape phones: keep all five options (each with its description) on screen without scrolling */
 @media (max-height: 460px) {
   #stat-title { font-size: clamp(22px, 7vh, 30px); }
@@ -271,10 +272,25 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 @media (max-width: 520px) and (orientation: portrait) {
   .stat-portrait { align-self: start; aspect-ratio: 3 / 4; }
 }
-@media (max-height: 360px) and (orientation: landscape) {
-  #stat-title { font-size: 28px; }
-  .stat-panel { padding: 8px; }
-  .stat-prompt { margin: 3px 0 4px; }
+@media (max-height: 500px) and (orientation: landscape) {
+  .stat-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 24%); padding: 7px; gap: 8px; }
+  #stat-title { font-size: clamp(20px, 6.5vh, 28px); padding-bottom: 2px; }
+  .stat-prompt { margin: 2px 0 4px; font-size: 12px; line-height: 1.2; }
+  .stat-options { gap: 3px; }
+  .stat-option { font-size: 13px; line-height: 1.15; padding-block: 2px; }
+  .stat-bar { height: 10px; }
+  .stat-effect { font-size: 11px; line-height: 1.2; }
+  .stat-effect-full { display: none; }
+  .stat-effect-short { display: inline; }
+}
+@media (max-height: 325px) and (orientation: landscape) {
+  .stat-option { min-height: 36px; }
+  .stat-effect { font-size: 10px; }
+}
+@media (max-height: 300px) and (orientation: landscape) {
+  .stat-panel { padding: 5px; gap: 6px; }
+  .stat-options { gap: 2px; }
+  .stat-prompt { margin: 1px 0 3px; }
 }
 .stats { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; border-top: 1px solid rgba(233,221,210,0.15); border-bottom: 1px solid rgba(233,221,210,0.15); }
 .stats div { display: grid; gap: 2px; padding: 12px 4px; }
@@ -434,11 +450,11 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <h2 id="stat-title">レベルアップ</h2>
       <p class="stat-prompt"><span>強化する項目を選ぶ</span><span id="stat-points" aria-live="polite"></span></p>
       <div class="stat-options">
-        <button type="button" class="stat-option" data-stat="health" title="最大体力が増える"><strong>体力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">最大体力が増える（1段階ごとに+90）</span></button>
-        <button type="button" class="stat-option" data-stat="power" title="ダメージと吹き飛ばしが強くなる"><strong>攻撃力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">斬撃のダメージと吹き飛ばしが強くなる（1段階ごとに+15%）</span></button>
-        <button type="button" class="stat-option" data-stat="technique" title="斬を連打したとき、止まらずに続けられる連撃数が増える"><strong>技術</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">斬を連打したとき、止まらずに続けられる連撃数が増える（3段〜最大14段）</span></button>
-        <button type="button" class="stat-option" data-stat="dodge" title="回避動作が速くなり、無敵時間が延びる"><strong>回避</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">回避の無敵時間が延び、動き出しが速くなる（最高でボタンを押した瞬間に無敵）</span></button>
-        <button type="button" class="stat-option" data-stat="awakening"><strong>覚醒</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect">覚醒ゲージが早くたまり、効果時間が延びる</span></button>
+        <button type="button" class="stat-option" data-stat="health" title="最大体力が増える"><strong>体力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect"><span class="stat-effect-full">最大体力が増える（1段階ごとに+90）</span><span class="stat-effect-short">最大体力 ＋90／段階</span></span></button>
+        <button type="button" class="stat-option" data-stat="power" title="ダメージと吹き飛ばしが強くなる"><strong>攻撃力</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect"><span class="stat-effect-full">斬撃のダメージと吹き飛ばしが強くなる（1段階ごとに+15%）</span><span class="stat-effect-short">ダメージ・吹き飛ばし ＋15%／段階</span></span></button>
+        <button type="button" class="stat-option" data-stat="technique" title="斬を連打したとき、止まらずに続けられる連撃数が増える"><strong>技術</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect"><span class="stat-effect-full">斬を連打したとき、止まらずに続けられる連撃数が増える（3段〜最大14段）</span><span class="stat-effect-short">連撃の上限が増える（最大14段）</span></span></button>
+        <button type="button" class="stat-option" data-stat="dodge" title="回避動作が速くなり、無敵時間が延びる"><strong>回避</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect"><span class="stat-effect-full">回避の無敵時間が延び、動き出しが速くなる（最高でボタンを押した瞬間に無敵）</span><span class="stat-effect-short">回避が速くなり無敵が延びる（最大で即無敵）</span></span></button>
+        <button type="button" class="stat-option" data-stat="awakening"><strong>覚醒</strong><span class="stat-bar" aria-hidden="true"></span><span class="stat-rank"></span><span class="stat-effect"><span class="stat-effect-full">覚醒ゲージが早くたまり、効果時間が延びる</span><span class="stat-effect-short">覚醒が早まり、効果時間が延びる</span></span></button>
       </div>
     </div>
     <div class="stat-portrait"><img src="assets/level-up-portrait.png" alt="鉄塊の傭兵"></div>
