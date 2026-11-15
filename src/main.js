@@ -924,6 +924,7 @@ function startFinisher(action) {
   }
   startDirectedCut(name, dir, action.cutFacing ?? h.face);
   h.lightCount = 0;
+  if (action.queuedHeavyDir) tutorialSuccess('slash');
 }
 
 const STAT_MAX = 10;
@@ -1097,11 +1098,13 @@ function startDodgeCut(roll) {
   h.lightCount = 1; h.comboIdx = 0; h.act.light = true;
   h.act.dodgeTime = roll.t;
   h.act.dodgeFacing = rollFacing;
+  tutorialSuccess('dodgeCut');
 }
 
-function beginCharge() {
+function beginCharge(fromDodge = false) {
   delete hero.pendingActions.heavy;
   hero.charge = 0; hero.chargeLv = 0; hero.heavyUsed = true;
+  hero.chargeFromDodge = fromDodge;
 }
 
 function advanceCharge(dt) {
@@ -1217,7 +1220,7 @@ function updateHero(dt) {
   const roll = h.act;
   if (roll?.name === 'DODGE') {
     if (!roll.charging && (wantHeavy || (input.held.has('heavy') && !h.heavyUsed))) {
-      beginCharge();
+      beginCharge(true);
       roll.charging = true;
       // The press can be consumed in the same frame that the button was released.
       roll.chargeReleased = !input.held.has('heavy');
@@ -1273,7 +1276,10 @@ function updateHero(dt) {
     } else if (a.name === 'CHARGE') {
       advanceCharge(dt);
       if (!input.held.has('heavy') || h.charge > 3.5) releaseCharge();
-    } else if (a.name === 'SPIN_IN' && a.t >= d.dur) startAction('SPIN_LOOP');
+    } else if (a.name === 'SPIN_IN' && a.t >= d.dur) {
+      startAction('SPIN_LOOP');
+      if (h.chargeLv > 0) tutorialSuccess(h.chargeFromDodge ? 'dodgeSpin' : 'spin');
+    }
     else if (a.name === 'SPIN_LOOP' && a.t >= d.dur) {
       h.pose.rootYaw = h.target.rootYaw = 0;
       h.spinLoops++;
@@ -1491,7 +1497,7 @@ function damageEnemy(e, dmg, kb, up, heavy, ox, oz, bonusLift = 0) {
 const SPIN_MOVES = new Set(['SPIN_IN', 'SPIN_LOOP', 'SPIN_OUT', 'L4', 'SPIN1', 'RSPIN2', 'REVSPIN']);
 function hurtHero(dmg, fromX, fromZ) {
   const h = hero;
-  if (h.iframe > 0 || h.dead || G.state !== 'play') return;
+  if (tutorial || h.iframe > 0 || h.dead || G.state !== 'play') return;
   const a = h.act;
   const dodgeTime = a?.name === 'DODGE' ? a.t : a?.dodgeTime;
   if (dodgeTime != null && dodgeTime < dodgeInvulnerability()) return;
@@ -1702,14 +1708,21 @@ function tryParry() {
   G.parries = (G.parries || 0) + 1;
   if (precise) startDisarm();
   else startClash();
+  const kind = precise ? 'disarm' : 'clash';
+  if (tutorial && tutorial.lesson.boss && tutorial.lesson.id !== kind && tutorial.count < TUTORIAL_REPS) {
+    $('#tutorial-status').textContent = precise ? '打ち落としになった。次は少し早く押そう。' : '打ち合いになった。次はもう少し引きつけよう。';
+  }
+  tutorialSuccess(kind);
   return true;
 }
 // every boss strike goes through here: a parry cancels it, otherwise it hurts if it connects
 function bossStrike(dmg, connects, sx, sz) {
   boss.glinted = false;
-  if (!connects) return false;
-  if (tryParry()) return true;
-  hurtHero(dmg, sx, sz);
+  if (connects && tryParry()) return true;
+  if (tutorial && tutorial.count < TUTORIAL_REPS) {
+    $('#tutorial-status').textContent = connects ? 'タイミングを合わせて、もう一度。' : 'ボスの正面で、もう一度。';
+  }
+  if (connects) hurtHero(dmg, sx, sz);
   return false;
 }
 
@@ -2030,6 +2043,7 @@ function strikeEta(b, dist) {
 }
 
 function damageBoss(dmg, stop = 0.095) {
+  if (tutorial) return;
   const b = boss;
   b.hp -= dmg; b.poise += dmg; addCombo();
   const dx = b.x - hero.x, dz = b.z - hero.z, l = Math.hypot(dx, dz) || 1;
@@ -2085,12 +2099,14 @@ function spawnBoss() {
   if (Math.hypot(boss.x - hero.x, boss.z - hero.z) < 9) { boss.x = hero.x * 0.3; boss.z = hero.z * 0.3 - Math.sign(hero.z || 1) * 6; }
   boss.face = Math.atan2(hero.x - boss.x, hero.z - boss.z);
   setBoss('roar'); boss.cd = 2; boss.rig.root.visible = true;
+  if (tutorial) return;
   setTimeout(() => sfx.play('roar'), 400);
   UI.bossBar.hidden = false;
   { const k = window.matchMedia?.('(pointer: fine)').matches ? 'J' : '斬'; showTip(`武器が光ったら ${k} で弾く ／ 命中寸前の${k}で武器を落とす ／ 打ち合い中は方向＋${k} で派生`); }
 }
 
 function updateWaves(dt) {
+  if (tutorial) { updateTutorial(); return; }
   if (G.mode === 'boss') {
     if (G.waveIdx < 0 && (G.introT -= dt) <= 0) {
       G.waveIdx = stage().waves.length - 1;
@@ -2209,6 +2225,81 @@ function refreshContinue() {
   else btn.hidden = true;
 }
 
+const TUTORIAL_REPS = 3;
+const TUTORIAL_LESSONS = [
+  { id: 'slash', name: '斬撃', hint: (slash, heavy) => `${slash}で斬り、斬っている間に方向を入れながら${heavy}を押す。` },
+  { id: 'spin', name: '重回転', hint: (_slash, heavy) => `${heavy}を光るまで長押ししてから離す。` },
+  { id: 'dodgeCut', name: '回避からの斬撃', hint: (slash, _heavy, dodge) => `${dodge}を押し、転がっている間に${slash}を押す。` },
+  { id: 'dodgeSpin', name: '回避からの重回転', hint: (_slash, heavy, dodge) => `${dodge}を押し、転がっている間に${heavy}を長押し。光ったら離す。` },
+  { id: 'disarm', name: '打ち落とし', boss: true, hint: slash => `ボスの刃が当たる直前、白い線が右端の緑に入ったら${slash}を押す。` },
+  { id: 'clash', name: '打ち合い', boss: true, hint: slash => `ボスの武器が光った後、白い線が緑に入ったら${slash}を押す。` },
+];
+let tutorial = null;
+
+function drawTutorialProgress() {
+  $('#tutorial-progress').textContent = `${tutorial.count} / ${TUTORIAL_REPS} 回`;
+}
+
+function setTutorialLesson(index) {
+  const lesson = TUTORIAL_LESSONS[index];
+  tutorial = { index, lesson, count: 0, advanceAt: Infinity, nextStrikeAt: G.time + 0.8 };
+  const keys = matchMedia('(pointer: coarse)').matches ? ['「斬」', '「重」', '「避」'] : ['J', 'K', 'Space'];
+  $('#tutorial-name').textContent = `${index + 1} / ${TUTORIAL_LESSONS.length}　${lesson.name}`;
+  $('#tutorial-hint').textContent = lesson.hint(...keys);
+  $('#tutorial-status').textContent = '';
+  const timing = $('#tutorial-timing');
+  timing.hidden = !lesson.boss;
+  timing.style.setProperty('--timing-start', `${100 * (1 - (lesson.id === 'disarm' ? DISARM_WIN : PARRY_WIN) / GLINT_AT)}%`);
+  timing.style.setProperty('--timing-end', lesson.id === 'disarm' ? '0%' : `${100 * DISARM_WIN / GLINT_AT}%`);
+  drawTutorialProgress();
+
+  if (lesson.boss) {
+    if (!boss || boss.state === 'hidden') {
+      G.waveIdx = stage().waves.length - 1;
+      spawnBoss();
+    }
+    setBoss('walk', Infinity);
+    Object.assign(boss, { x: 0, z: 4, face: Math.PI, strikeIn: null });
+    Object.assign(hero, { x: 0, z: 0, face: 0 });
+  }
+}
+
+function tutorialSuccess(id) {
+  if (tutorial?.lesson.id !== id || tutorial.count >= TUTORIAL_REPS) return;
+  tutorial.count++;
+  drawTutorialProgress();
+  const complete = tutorial.count === TUTORIAL_REPS;
+  $('#tutorial-status').textContent = complete ? '3回成功。課題クリア！' : `成功 ${tutorial.count}回目`;
+  if (complete) tutorial.advanceAt = G.time + 0.65;
+}
+
+function updateTutorial() {
+  if (G.time >= tutorial.advanceAt && !hero.act?.def.clashLocked) {
+    const next = tutorial.index + 1;
+    if (next < TUTORIAL_LESSONS.length) {
+      setTutorialLesson(next);
+    } else {
+      G.state = 'tutorial-complete';
+      sfx.stopMusic();
+      UI.hud.hidden = true;
+      $('#tutorial-summary').textContent = `全${TUTORIAL_LESSONS.length}課題を${TUTORIAL_REPS}回ずつ成功した。`;
+      $('#tutorial-complete').hidden = false;
+      $('#btn-tutorial-title').focus();
+    }
+    return;
+  }
+  if (!tutorial.lesson.boss) return;
+  if (tutorial.count < TUTORIAL_REPS && boss.state === 'walk' && G.time >= tutorial.nextStrikeAt) {
+    Object.assign(boss, { x: 0, z: 4, face: Math.PI, strikeIn: null });
+    Object.assign(hero, { x: 0, z: 0, face: 0 });
+    setBoss('cleaveWind', Infinity);
+    tutorial.nextStrikeAt = G.time + 2.4;
+  }
+  const remaining = Math.max(0, Math.min(GLINT_AT, boss.strikeIn ?? GLINT_AT));
+  const marker = $('#tutorial-timing i');
+  marker.style.left = `${99 * (1 - remaining / GLINT_AT)}%`;
+}
+
 function resetGame(keepLevel = false) {
   for (const e of enemies) e.dead = true;
   enemies.length = 0; fx.clear(); crowd.begin(); crowd.end();
@@ -2222,6 +2313,9 @@ function resetGame(keepLevel = false) {
   if (boss) { restoreBossAxe(boss); boss.rig.root.visible = false; boss.state = 'hidden'; boss.hp = boss.maxHp; boss.dead = false; boss.poise = 0; }
   Object.assign(G, { time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, waveDelay: 0, result: null, playTime: 0 });
   UI.bossBar.hidden = true; UI.combo.hidden = true;
+  tutorial = null;
+  $('#tutorial-guide').hidden = true;
+  $('#tutorial-complete').hidden = true;
   document.body.classList.remove('raging', 'rage-ready');
   for (const k in hudCache) delete hudCache[k];
 }
@@ -2251,7 +2345,17 @@ function startGame(stageIdx = 0, level = 1, exp = 0, stats, difficulty = 'normal
   G.stageIdx = stageIdx; applyEnv(stage().env);
   UI.title.hidden = true; UI.result.hidden = true; UI.pause.hidden = true; UI.hud.hidden = false;
   G.state = 'play'; input.clear();
-  if (bossOnly) {
+  if (mode === 'tutorial') {
+    clearTimeout(bannerTimer);
+    clearTimeout(tipTimer);
+    UI.wave.classList.remove('show');
+    $('#tip').classList.remove('show');
+    UI.objective.textContent = '';
+    UI.bossBar.hidden = true;
+    input.resetButtons(); input.resetStick(); input.keys.clear();
+    $('#tutorial-guide').hidden = false;
+    setTutorialLesson(0);
+  } else if (bossOnly) {
     showBanner(stage().boss.name, '決戦');
     G.introT = 0.9;
     UI.objective.textContent = stage().boss.name + 'を討て';
@@ -2318,6 +2422,7 @@ function frame(now) {
     if (input.consume('pause') && G.state === 'play') { setPaused(true); }
     else {
       if (G.hitstop > 0) { G.hitstop -= dt; dt *= 0.08; }
+      if (tutorial?.lesson.boss && (boss?.state === 'cleaveWind' || boss?.state === 'cleave')) dt *= 0.65;
       G.slowmo += (1 - G.slowmo) * Math.min(1, dt * 0.8);
       dt *= G.slowmo;
       // substeps > 1 only in automated tests (software GL renders far below real time)
@@ -2532,6 +2637,13 @@ async function boot() {
 
 $('.difficulty-choice').addEventListener('change', refreshContinue);
 UI.start.addEventListener('click', () => startGame(0, 1, 0, undefined, selectedDifficulty()));
+const startTutorial = () => startGame(0, 1, 0, undefined, 'normal', 'tutorial');
+$('#btn-tutorial').addEventListener('click', startTutorial);
+$('#btn-tutorial-retry').addEventListener('click', startTutorial);
+$('#btn-tutorial-title').addEventListener('click', () => {
+  returnToTitle();
+  $('#btn-tutorial').focus();
+});
 $('#btn-continue').addEventListener('click', () => {
   const difficulty = selectedDifficulty();
   const sv = loadSave(difficulty);
@@ -2543,7 +2655,11 @@ $('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.le
 $('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; refreshContinue(); });
 $('#btn-pause').addEventListener('click', () => setPaused(true));
 $('#btn-resume').addEventListener('click', () => setPaused(false));
-$('#btn-quit').addEventListener('click', () => { setPaused(false); G.state = 'title'; sfx.stopMusic(); resetGame(); UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false; refreshContinue(); });
+function returnToTitle() {
+  setPaused(false); G.state = 'title'; sfx.stopMusic(); resetGame();
+  UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false; refreshContinue();
+}
+$('#btn-quit').addEventListener('click', returnToTitle);
 $('#btn-sound').addEventListener('click', (e) => { sfx.unlock(); sfx.setMuted(!sfx.muted); e.currentTarget.classList.toggle('off', sfx.muted); e.currentTarget.setAttribute('aria-pressed', String(sfx.muted)); });
 for (const button of STAT_BUTTONS) button.addEventListener('click', () => chooseStat(button.dataset.stat));
 UI.statSelect.addEventListener('keydown', e => {

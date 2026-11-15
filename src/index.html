@@ -134,6 +134,14 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 @keyframes callout { 0% { opacity: 0; transform: scale(1.6); } 15% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(0.96); } }
 #tip { position: absolute; left: 16px; right: 16px; bottom: 26%; text-align: center; font-size: 13px; letter-spacing: 0.08em; color: #f3e6cf; text-shadow: 0 1px 3px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
 #tip.show { opacity: 1; }
+#tutorial-guide { position: absolute; top: calc(var(--st) + 50px); left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - var(--sl) - var(--sr))); padding: 9px 12px; background: #201610ed; border: 1px solid #906c46; border-radius: 6px; color: var(--ash); }
+#tutorial-guide header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+#tutorial-progress { color: #ffdc99; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#tutorial-hint, #tutorial-status { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
+#tutorial-status { color: #ffdc99; }
+#tutorial-timing { position: relative; margin-top: 7px; height: 9px; border-radius: 3px; background: #4a3528; overflow: hidden; }
+#tutorial-timing::after { content: ""; position: absolute; inset: 0 var(--timing-end) 0 var(--timing-start); background: #78be93; }
+#tutorial-timing i { position: absolute; inset: 0 auto 0 0; width: 3px; background: #fff4d0; z-index: 1; }
 #wave-banner { position: absolute; left: 0; right: 0; top: 34%; display: grid; justify-items: center; gap: 6px; opacity: 0; transform: translateY(8px); transition: opacity 0.35s, transform 0.35s; }
 #wave-banner.show { opacity: 1; transform: none; }
 #wave-label { font-family: var(--f-display); font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.4em; padding-left: 0.4em; text-shadow: 0 2px 22px #000; }
@@ -283,6 +291,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
         </select>
       </div>
       <button class="btn-primary" id="btn-start">出陣</button>
+      <button type="button" class="btn-ghost" id="btn-tutorial">チュートリアル</button>
       <button type="button" class="btn-ghost" id="btn-boss-mode" aria-haspopup="dialog" aria-controls="boss-setup" aria-expanded="false">ボス戦</button>
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
@@ -346,6 +355,12 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <div id="combo" hidden><span id="combo-n">0</span><small>HITS</small></div>
   <div id="callout"></div>
   <div id="tip"></div>
+  <section id="tutorial-guide" aria-labelledby="tutorial-name" hidden>
+    <header><strong id="tutorial-name"></strong><span id="tutorial-progress"></span></header>
+    <p id="tutorial-hint"></p>
+    <div id="tutorial-timing" aria-hidden="true" hidden><i></i></div>
+    <p id="tutorial-status" role="status"></p>
+  </section>
   <div id="wave-banner"><div id="wave-label">第一波</div><div id="wave-sub"></div></div>
   <div id="stick-zone"><div class="stick-hint">移動</div><div class="stick-base"></div><div class="stick-knob"></div></div>
   <div class="pad">
@@ -395,6 +410,17 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <div><dt>評価</dt><dd id="r-rank">—</dd></div>
     </dl>
     <div class="row"><button class="btn-primary" id="btn-next" hidden>次の戦場へ</button><button class="btn-primary" id="btn-retry">再出陣</button><button class="btn-ghost" id="btn-title">タイトルへ</button></div>
+  </div>
+</div>
+
+<div id="tutorial-complete" class="overlay" role="dialog" aria-modal="true" aria-labelledby="tutorial-complete-title" hidden>
+  <div class="panel">
+    <h2 id="tutorial-complete-title">チュートリアルクリア</h2>
+    <p id="tutorial-summary"></p>
+    <div class="row">
+      <button type="button" class="btn-primary" id="btn-tutorial-title">タイトルへ戻る</button>
+      <button type="button" class="btn-ghost" id="btn-tutorial-retry">もう一度練習</button>
+    </div>
   </div>
 </div>
 
