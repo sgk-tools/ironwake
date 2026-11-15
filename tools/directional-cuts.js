@@ -7,7 +7,7 @@ async function run() {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage({ viewport: { width: 640, height: 360 }, hasTouch: true });
+    const page = await browser.newPage({ viewport: { width: 390, height: 780 }, hasTouch: true });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');

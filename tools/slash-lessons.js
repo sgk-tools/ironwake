@@ -17,18 +17,8 @@ async function run() {
       localStorage.setItem('ironwake-save-v1', JSON.stringify({ stage: 1, level: 1, exp: 0 }));
       document.querySelector('input[name="difficulty"]:checked').dispatchEvent(new Event('change', { bubbles: true }));
     });
-    for (const size of [{ width: 568, height: 280 }, { width: 568, height: 320 }, { width: 852, height: 393 }, { width: 390, height: 844 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(size);
-      await page.evaluate(() => {
-        const style = document.documentElement.style;
-        if (matchMedia('(orientation: landscape)').matches) {
-          style.setProperty('--sl', '47px');
-          style.setProperty('--sr', '47px');
-        } else {
-          style.removeProperty('--sl');
-          style.removeProperty('--sr');
-        }
-      });
       for (const id of ['btn-start', 'btn-tutorial', 'btn-slash-tutorial', 'btn-continue', 'btn-boss-mode', 'btn-controls-guide']) {
         const box = await page.locator('#' + id).boundingBox();
         assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= size.width && box.y + box.height <= size.height,
@@ -169,44 +159,13 @@ async function run() {
     const guide = page.locator('#tutorial-guide');
     await guide.waitFor();
     assert.equal(await page.locator('#tutorial-steps li:visible').count(), 3);
-    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 568, height: 320 }, { width: 852, height: 393 }, { width: 900, height: 450 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(size);
       const panel = await guide.boundingBox();
       for (const button of ['attack', 'heavy', 'dodge', 'rage']) {
         const box = await page.locator('#btn-' + button).boundingBox();
         assert.ok(panel.y + panel.height <= box.y || panel.x + panel.width <= box.x, JSON.stringify({ size, panel, button, box }));
       }
-      if (size.width <= size.height) continue;
-      assert.equal(await page.locator('#tutorial-steps .step-compact:visible').count(), 3);
-      const heroBounds = await page.evaluate(() => new Promise(resolve => {
-        const g = window.__game, h = g.hero();
-        const render = g.renderer.render;
-        document.documentElement.style.setProperty('--sl', '47px');
-        g.startAction('BACK_LEAP');
-        h.act.t = 0.24;
-        g.renderer.render = (_scene, camera) => {
-          camera.updateMatrixWorld(true);
-          const corners = [];
-          for (const joint of Object.values(h.rig.j)) {
-            const mesh = joint.children[0];
-            if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-            const { min, max } = mesh.geometry.boundingBox;
-            for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
-              const point = h.tip.clone().set(x, y, z).applyMatrix4(mesh.matrixWorld).project(camera);
-              corners.push({ x: (point.x + 1) * innerWidth / 2, y: (1 - point.y) * innerHeight / 2 });
-            }
-          }
-          const panelRight = document.querySelector('#tutorial-guide').getBoundingClientRect().right;
-          document.documentElement.style.removeProperty('--sl');
-          g.renderer.render = render;
-          resolve({
-            left: Math.min(...corners.map(p => p.x)), right: Math.max(...corners.map(p => p.x)),
-            top: Math.min(...corners.map(p => p.y)), bottom: Math.max(...corners.map(p => p.y)), panelRight,
-          });
-        };
-      }));
-      assert.ok(heroBounds.left >= heroBounds.panelRight + 8 && heroBounds.right <= size.width
-        && heroBounds.top >= 0 && heroBounds.bottom <= size.height, JSON.stringify({ size, heroBounds }));
     }
     await page.getByRole('button', { name: '一時停止' }).tap();
     await page.getByRole('button', { name: 'タイトルへ戻る' }).tap();
@@ -215,7 +174,7 @@ async function run() {
       const { G } = window.__game;
       Object.assign(G, { ko: 12345, waveIdx: 0, spawnLeft: 9999, spawnT: 99 });
     });
-    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 667, height: 375 }, { width: 852, height: 393 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(size);
       const [objective, ko, buttons] = await Promise.all([
         page.locator('#objective').boundingBox(), page.locator('.ko').boundingBox(), page.locator('.right-top').boundingBox(),
@@ -229,19 +188,13 @@ async function run() {
     await page.evaluate(() => window.__game.gainExp(24));
     const levelUp = page.getByRole('dialog', { name: 'レベルアップ' });
     await levelUp.waitFor({ state: 'visible' });
-    for (const size of [{ width: 568, height: 280 }, { width: 568, height: 320 }, { width: 852, height: 393 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(size);
-      await page.evaluate(() => {
-        const style = document.documentElement.style;
-        for (const [key, value] of Object.entries({ '--sl': '47px', '--sr': '47px', '--st': '12px', '--sb': '20px' })) {
-          style.setProperty(key, value);
-        }
-      });
       const panel = levelUp.locator('.stat-panel');
       const scroll = await panel.evaluate(el => ({ height: el.clientHeight, content: el.scrollHeight, offset: el.scrollTop }));
       assert.ok(scroll.content <= scroll.height + 1 && scroll.offset === 0, JSON.stringify({ size, scroll }));
       assert.equal(await panel.locator('.stat-portrait img:visible').count(), 1);
-      assert.equal(await panel.locator('.stat-effect-short:visible').count(), 5);
+      assert.equal(await panel.locator('.stat-effect-full:visible').count(), 5);
       for (const stat of await panel.locator('.stat-option').all()) {
         const box = await stat.boundingBox();
         assert.ok(box && box.y >= 0 && box.y + box.height <= size.height, JSON.stringify({ size, box }));
@@ -251,7 +204,7 @@ async function run() {
     await levelUp.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => window.__game.hero().stats.awakening), 2);
     assert.deepEqual(errors, []);
-    console.log(`${lessons.length} slash lessons, vertical touch input, landscape title and level-up layout, and HUD passed.`);
+    console.log(`${lessons.length} slash lessons, vertical touch input, portrait title and level-up layout, and HUD passed.`);
   } finally {
     await browser.close();
   }

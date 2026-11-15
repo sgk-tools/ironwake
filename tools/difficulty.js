@@ -7,7 +7,7 @@ async function run() {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage(devices['iPhone 15 Pro landscape']);
+    const page = await browser.newPage(devices['iPhone 15 Pro']);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
@@ -15,7 +15,7 @@ async function run() {
     const choices = page.locator('.title-inner .difficulty-choice label');
     assert.equal(await choices.count(), 3);
     assert.ok(await page.locator('input[name=difficulty][value=normal]').isChecked());
-    for (const size of [{ width: 393, height: 852 }, { width: 667, height: 375 }]) {
+    for (const size of [{ width: 393, height: 852 }, { width: 320, height: 568 }]) {
       await page.setViewportSize(size);
       for (const label of [...await choices.all(), page.locator('#btn-start')]) {
         const box = await label.boundingBox();

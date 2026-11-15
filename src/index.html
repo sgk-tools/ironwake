@@ -87,8 +87,6 @@ button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
 .btn-ghost { font-size: 14px; letter-spacing: 0.12em; padding: 12px 18px; border: 1px solid rgba(233,221,210,0.28); }
 .keys { font-size: 12px; color: var(--ash-dim); line-height: 1.7; letter-spacing: 0.04em; }
 .keys b { color: var(--ash); font-weight: 700; }
-.rotate-hint { display: none; font-size: 12px; color: var(--ember); letter-spacing: 0.1em; }
-@media (orientation: portrait) and (pointer: coarse) { .rotate-hint { display: block; } }
 @media (pointer: coarse) { .keys.desk { display: none; } }
 @media (pointer: fine) { .keys.touch { display: none; } }
 
@@ -141,19 +139,20 @@ body.raging #rage-fill { background: linear-gradient(90deg, #ff3010, #ffd0a0); }
 @keyframes callout { 0% { opacity: 0; transform: scale(1.6); } 15% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(0.96); } }
 #tip { position: absolute; left: 16px; right: 16px; bottom: 26%; text-align: center; font-size: 13px; letter-spacing: 0.08em; color: #f3e6cf; text-shadow: 0 1px 3px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
 #tip.show { opacity: 1; }
-#tutorial-guide { position: absolute; top: calc(var(--st) + 50px); left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - var(--sl) - var(--sr))); padding: 9px 12px; background: #201610ed; border: 1px solid #906c46; border-radius: 6px; color: var(--ash); }
+#tutorial-guide { position: absolute; z-index: 1; top: calc(var(--st) + 50px); left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - var(--sl) - var(--sr))); padding: 9px 12px; background: #201610ed; border: 1px solid #906c46; border-radius: 6px; color: var(--ash); }
 #tutorial-guide header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 #tutorial-progress { color: #ffdc99; white-space: nowrap; font-variant-numeric: tabular-nums; }
 #tutorial-hint, #tutorial-status { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
 #tutorial-hint:empty, #tutorial-status:empty { display: none; }
 #tutorial-status { color: #ffdc99; }
+#btn-tutorial-next { width: 100%; min-height: 44px; margin-top: 6px; padding: 4px 8px; border: 1px solid #a87341; border-radius: 4px; background: #5c351e; color: #fff0cc; font-size: 13px; font-weight: 700; pointer-events: auto; }
 #tutorial-steps { margin: 5px 0 0; padding-inline-start: 1.5em; font-size: 13px; line-height: 1.4; }
 #tutorial-steps li { padding: 3px 5px; border-radius: 3px; }
 #tutorial-steps li[aria-current="step"] { background: #4a3322; color: #ffdc99; box-shadow: inset 2px 0 #d29148; }
 #tutorial-steps .step-compact { display: none; }
 @media (orientation: landscape) and (max-height: 500px) {
-  #tutorial-guide.slash-lesson { left: var(--sl); transform: none; width: min(320px, calc(36vw - var(--sl))); padding: 6px 10px; }
-  .slash-lesson header { font-size: clamp(12px, 2vw, 15px); gap: 5px; }
+  #tutorial-guide { left: var(--sl); transform: none; width: min(320px, calc(36vw - var(--sl))); padding: 6px 10px; }
+  #tutorial-guide header { font-size: clamp(12px, 2vw, 15px); gap: 5px; }
   #tutorial-steps li { padding-block: 2px; }
   #tutorial-steps .step-full { display: none; }
   #tutorial-steps .step-compact { display: inline; }
@@ -201,6 +200,8 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 
 /* ---------- overlays ---------- */
 .overlay { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: rgba(10,5,4,0.78); padding: var(--st) var(--sr) var(--sb) var(--sl); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+#orientation-guard { z-index: 60; background: #160f0c; text-align: center; }
+#orientation-guard h2 { font-size: clamp(22px, 5vw, 32px); letter-spacing: 0.08em; }
 .panel { display: grid; gap: 16px; justify-items: center; text-align: center; width: min(460px, 100%); }
 .panel h2 { font-family: var(--f-display); font-size: clamp(34px, 6vw, 48px); letter-spacing: 0.3em; padding-left: 0.3em; margin: 0; text-wrap: balance; }
 .panel p { margin: 0; color: var(--ash-dim); font-size: 14px; letter-spacing: 0.06em; }
@@ -315,6 +316,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 @media (prefers-reduced-motion: reduce) { #combo.pop #combo-n, body.rage-ready #rage-fill, #btn-rage.ready { animation: none; } }
 </style>
 
+<div id="game-shell">
 <canvas id="game" aria-label="戦場"></canvas>
 
 <div id="loading">
@@ -349,7 +351,6 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button type="button" class="btn-ghost" id="btn-boss-mode" aria-haspopup="dialog" aria-controls="boss-setup" aria-expanded="false">ボス戦</button>
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
       <button type="button" class="btn-ghost" id="btn-controls-guide" aria-haspopup="dialog" aria-controls="controls-guide" aria-expanded="false">操作ガイド</button>
-      <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
   </div>
   <div id="controls-guide" class="overlay" role="dialog" aria-modal="true" aria-labelledby="controls-guide-title" hidden>
@@ -430,6 +431,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
     <ol id="tutorial-steps" aria-label="操作手順" hidden></ol>
     <div id="tutorial-timing" aria-hidden="true" hidden><i></i></div>
     <p id="tutorial-status" role="status"></p>
+    <button type="button" id="btn-tutorial-next" hidden>次の練習へ</button>
   </section>
   <div id="wave-banner"><div id="wave-label">第一波</div><div id="wave-sub"></div></div>
   <div id="stick-zone"><div class="stick-hint">移動</div><div class="stick-base"></div><div class="stick-knob"></div></div>
@@ -492,6 +494,15 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button type="button" class="btn-ghost" id="btn-tutorial-retry">もう一度練習</button>
       <button type="button" class="btn-ghost" id="btn-other-slash" hidden>ほかの斬撃を選ぶ</button>
     </div>
+  </div>
+</div>
+
+</div>
+
+<div id="orientation-guard" class="overlay" role="status" hidden>
+  <div class="panel">
+    <h2>端末を縦向きにしてください</h2>
+    <p>縦に戻すと、同じ場面から続けられる。</p>
   </div>
 </div>
 

@@ -548,6 +548,26 @@ const DIFFICULTIES = {
   hard: { hp: 1.35, damage: 1.4, speed: 1.15 },
 };
 const G = { substeps: 1, stageIdx: 0, difficulty: 'normal', mode: 'campaign', introT: 0, state: 'loading', time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, alive: 0, waveDelay: 0, result: null };
+const landscapeTouch = matchMedia('(orientation: landscape) and (pointer: coarse)');
+let resumeAfterRotation = false;
+
+function updateOrientationGuard() {
+  const blocked = landscapeTouch.matches;
+  $('#game-shell').inert = blocked;
+  $('#orientation-guard').hidden = !blocked;
+  input.clear(); input.resetButtons(); input.resetStick(); input.keys.clear();
+  if (hero) hero.pendingActions = {};
+  if (blocked) {
+    resumeAfterRotation = sfx.ctx?.state === 'running';
+    if (resumeAfterRotation) sfx.ctx.suspend();
+  } else if (resumeAfterRotation) {
+    resumeAfterRotation = false;
+    if (G.state !== 'pause') sfx.ctx?.resume();
+  }
+  if (!blocked && G.state === 'stat-select') renderer.render(scene, camera);
+}
+landscapeTouch.addEventListener('change', updateOrientationGuard);
+updateOrientationGuard();
 
 // Each stage: its waves (mix = spawn weights per enemy type), its boss and its lighting.
 const STAGES = [
@@ -2261,8 +2281,8 @@ const TUTORIAL_LESSONS = [
   { id: 'spin', name: '重回転', hint: (_slash, heavy) => `${heavy}を光るまで長押ししてから離す。` },
   { id: 'dodgeCut', name: '回避からの斬撃', hint: (slash, _heavy, dodge) => `${dodge}を押し、転がっている間に${slash}を押す。` },
   { id: 'dodgeSpin', name: '回避からの重回転', hint: (_slash, heavy, dodge) => `${dodge}を押し、転がっている間に${heavy}を長押し。光ったら離す。` },
-  { id: 'disarm', name: '打ち落とし', boss: true, hint: slash => `ボスの刃が当たる直前、白い線が右端の緑に入ったら${slash}を押す。` },
-  { id: 'clash', name: '打ち合い', boss: true, hint: slash => `ボスの武器が光った後、白い線が緑に入ったら${slash}を押す。` },
+  { id: 'disarm', name: '打ち落とし', boss: true, hint: slash => `命中直前、白線が右端の緑に入ったら${slash}。` },
+  { id: 'clash', name: '打ち合い', boss: true, hint: slash => `武器が光った後、白線が緑に入ったら${slash}。` },
 ];
 let tutorial = null;
 let selectedSlash = null;
@@ -2323,9 +2343,9 @@ function drawTutorialProgress() {
 
 function setTutorialLesson(index, pattern = null) {
   const lesson = pattern ? { id: 'pattern', name: pattern.name } : TUTORIAL_LESSONS[index];
-  tutorial = { index, lesson, pattern, step: 0, resetSlash: false, count: 0, advanceAt: Infinity, nextStrikeAt: G.time + 0.8 };
+  tutorial = { index, lesson, pattern, step: 0, resetSlash: false, count: 0, advanceAt: Infinity, awaitingNext: false, nextStrikeAt: G.time + 0.8 };
   $('#tutorial-name').textContent = pattern ? lesson.name : `${index + 1} / ${TUTORIAL_LESSONS.length}　${lesson.name}`;
-  $('#tutorial-guide').classList.toggle('slash-lesson', Boolean(pattern));
+  $('#btn-tutorial-next').hidden = true;
   $('#tutorial-steps').hidden = !pattern;
   if (pattern) {
     $('#tutorial-hint').textContent = pattern.commands.length > 1 ? '2手目以降は、前の斬撃中に入力。' : '';
@@ -2357,15 +2377,24 @@ function tutorialSuccess(id) {
   drawTutorialProgress();
   const complete = tutorial.count === TUTORIAL_REPS;
   $('#tutorial-status').textContent = complete ? '3回成功。課題クリア！' : `成功 ${tutorial.count}回目`;
-  if (complete) tutorial.advanceAt = G.time + 0.65;
+  if (complete) {
+    tutorial.advanceAt = G.time + (id === 'spin' || id === 'dodgeSpin' ? 0.95 : 0.65);
+    tutorial.completedAction = hero.act;
+  }
 }
 
 function updateTutorial() {
   const { pattern } = tutorial;
-  if (G.time >= tutorial.advanceAt && (pattern ? !hero.act : !hero.act?.def.clashLocked)) {
+  if (G.time >= tutorial.advanceAt && hero.act !== tutorial.completedAction && (pattern ? !hero.act : !hero.act?.def.clashLocked)) {
     const next = tutorial.index + 1;
     if (!pattern && next < TUTORIAL_LESSONS.length) {
-      setTutorialLesson(next);
+      tutorial.awaitingNext = true;
+      $('#tutorial-hint').textContent = '';
+      $('#tutorial-timing').hidden = true;
+      const button = $('#btn-tutorial-next');
+      button.textContent = `次の練習へ → ${TUTORIAL_LESSONS[next].name}`;
+      button.hidden = false;
+      button.focus({ preventScroll: true });
     } else {
       G.state = 'tutorial-complete';
       sfx.stopMusic();
@@ -2507,6 +2536,7 @@ let last = performance.now(), fpsAcc = 0, fpsN = 0, fpsCheck = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (landscapeTouch.matches) return;
   if (G.state === 'stat-select') return;
   if (G.state === 'levelup') { G.levelUpT += dt; if (G.levelUpT >= LEVELUP_HOLD) endLevelUp(); return; }   // frozen on the banner
   // adaptive quality: drop resolution / shadows if frames are slow
@@ -2518,7 +2548,7 @@ function frame(now) {
   }
   if (G.state === 'play' || G.state === 'over') {
     if (input.consume('pause') && G.state === 'play') { setPaused(true); }
-    else {
+    else if (!tutorial?.awaitingNext) {
       if (G.hitstop > 0) { G.hitstop -= dt; dt *= 0.08; }
       if (tutorial?.lesson.boss && (boss?.state === 'cleaveWind' || boss?.state === 'cleave')) dt *= 0.65;
       G.slowmo += (1 - G.slowmo) * Math.min(1, dt * 0.8);
@@ -2529,6 +2559,7 @@ function frame(now) {
         updateHero(dt); updateEnemies(dt); updateBoss(dt);
         if (G.state === 'play') updateWaves(dt);
         fx.update(dt);
+        if (tutorial?.awaitingNext) break;
         if (G.state === 'play' && !hero.dead && statPoints() > 0) {
           beginLevelUp();
           break;
@@ -2803,6 +2834,12 @@ function startTutorial(pattern = null) {
 }
 $('#btn-tutorial').addEventListener('click', () => startTutorial());
 $('#btn-tutorial-retry').addEventListener('click', () => startTutorial(selectedSlash));
+$('#btn-tutorial-next').addEventListener('click', () => {
+  if (G.state !== 'play' || !tutorial?.awaitingNext) return;
+  input.clear(); input.resetButtons(); input.resetStick(); input.keys.clear();
+  hero.pendingActions = {};
+  setTutorialLesson(tutorial.index + 1);
+});
 $('#btn-other-slash').addEventListener('click', () => {
   returnToTitle();
   $('#btn-slash-tutorial').click();
@@ -2842,7 +2879,7 @@ UI.statSelect.addEventListener('keydown', e => {
   }
 });
 // Resize redraws the frozen battlefield once without advancing it.
-window.addEventListener('resize', () => { if (G.state === 'stat-select') renderer.render(scene, camera); });
+window.addEventListener('resize', () => { if (!landscapeTouch.matches && G.state === 'stat-select') renderer.render(scene, camera); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play') setPaused(true); });
 
 requestAnimationFrame(frame);

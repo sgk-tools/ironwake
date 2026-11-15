@@ -4,7 +4,7 @@ const { chromium, devices } = require('playwright');
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const results = [];
   for (const mode of ['keyboard', 'touch']) {
-    const ctx = mode === 'touch' ? await b.newContext({ ...devices['iPhone 15 Pro landscape'] }) : await b.newContext({ viewport: { width: 900, height: 500 } });
+    const ctx = mode === 'touch' ? await b.newContext({ ...devices['iPhone 15 Pro'] }) : await b.newContext({ viewport: { width: 900, height: 500 } });
     const p = await ctx.newPage(); const errors = []; p.on('pageerror', e => errors.push(e.message));
     await p.goto('http://localhost:8123/dist/test.html');
     await p.waitForSelector('#title:not([hidden])', { timeout: 120000 });

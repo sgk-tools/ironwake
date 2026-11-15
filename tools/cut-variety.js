@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  const p = await b.newPage({ viewport: { width: 480, height: 270 }, hasTouch: true });
+  const p = await b.newPage({ viewport: { width: 390, height: 780 }, hasTouch: true });
   const errors = []; p.on('pageerror', e => errors.push(e.message));
   await p.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
   await p.locator('#btn-start').waitFor({ timeout: 120000 });

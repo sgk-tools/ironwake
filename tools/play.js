@@ -5,7 +5,7 @@ const MODE = process.argv[3] || 'desktop';
 (async () => {
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
   const ctx = MODE === 'iphone'
-    ? await b.newContext({ ...devices['iPhone 15 Pro landscape'] })
+    ? await b.newContext({ ...devices['iPhone 15 Pro'] })
     : await b.newContext({ viewport: { width: 1280, height: 720 } });
   const p = await ctx.newPage();
   const errors = [];

@@ -7,7 +7,7 @@ async function run() {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage(devices['iPhone 15 Pro landscape']);
+    const page = await browser.newPage(devices['iPhone 15 Pro']);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
@@ -19,7 +19,7 @@ async function run() {
     await start.tap();
 
     const guide = page.locator('#tutorial-guide');
-    for (const size of [{ width: 667, height: 375 }, { width: 390, height: 780 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 780 }]) {
       await page.setViewportSize(size);
       const [panel, attack] = await Promise.all([guide.boundingBox(), page.locator('#btn-attack').boundingBox()]);
       assert.ok(panel.x >= 0 && panel.x + panel.width <= size.width && panel.y + panel.height < attack.y);
@@ -49,6 +49,50 @@ async function run() {
           await until(() => progress(reps), `success ${reps}`);
         }
       }
+      async function nextLesson(name, testPause = false) {
+        const next = $('#btn-tutorial-next');
+        await until(() => !next.hidden, 'next lesson button');
+        if (!progress(3) || !next.textContent.endsWith(name)) throw new Error(`Missing transition to ${name}`);
+        const rect = next.getBoundingClientRect();
+        if (document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) !== next) {
+          throw new Error('Next lesson button cannot receive a touch');
+        }
+        const time = g.G.time;
+        await frame();
+        await frame();
+        if (g.G.time !== time || next.hidden) throw new Error('The tutorial advanced by itself');
+        if (testPause) {
+          $('#btn-pause').click();
+          if (g.G.state !== 'pause') throw new Error('Could not pause while waiting for the next lesson');
+          $('#btn-resume').click();
+          if (g.G.state !== 'play' || next.hidden) throw new Error('Lost the next lesson prompt on resume');
+        }
+        next.click();
+        await lesson(name);
+        if (!next.hidden || !progress(0)) throw new Error('The next lesson did not reset progress');
+      }
+
+      async function checkBattleView() {
+        const render = g.renderer.render;
+        await new Promise((resolve, reject) => {
+          g.renderer.render = (_scene, camera) => {
+            g.renderer.render = render;
+            camera.updateMatrixWorld(true);
+            const panel = $('#tutorial-guide').getBoundingClientRect();
+            for (const actor of [h, g.boss()]) {
+              for (const joint of [actor.rig.j.head, actor.rig.j.torso, actor.rig.j.pelvis]) {
+                const point = joint.getWorldPosition(h.tip.clone()).project(camera);
+                const x = (point.x + 1) * innerWidth / 2, y = (1 - point.y) * innerHeight / 2;
+                if (x >= panel.left - 12 && x <= panel.right + 12 && y >= panel.top - 12 && y <= panel.bottom + 12) {
+                  reject(new Error(`Tutorial guide overlaps a combatant at ${x}, ${y}`));
+                  return;
+                }
+              }
+            }
+            resolve();
+          };
+        });
+      }
 
       await lesson('斬撃');
       await repeat(async () => {
@@ -60,7 +104,7 @@ async function run() {
         await frame();
         g.input.mx = 0;
       });
-      await lesson('重回転');
+      await nextLesson('重回転', true);
       await idle();
       tap('heavy');
       await until(() => h.act?.name === 'SPIN_LOOP', 'quick heavy');
@@ -72,14 +116,14 @@ async function run() {
         up();
       });
 
-      await lesson('回避からの斬撃');
+      await nextLesson('回避からの斬撃');
       await repeat(async () => {
         await idle();
         tap('dodge');
         await until(() => h.act?.name === 'DODGE', 'rolling');
         tap('attack');
       });
-      await lesson('回避からの重回転');
+      await nextLesson('回避からの重回転');
       await repeat(async () => {
         await idle();
         tap('dodge');
@@ -97,15 +141,18 @@ async function run() {
         }, 'strike window');
         tap('attack');
       }
-      await lesson('打ち落とし');
+      await nextLesson('打ち落とし');
+      await checkBattleView();
       await until(() => $('#tutorial-status').textContent.includes('もう一度'), 'miss feedback');
       if (!progress(0) || h.hp !== h.maxHp) throw new Error('Miss counted or did damage');
       await alignSlash(false);
       await until(() => $('#tutorial-status').textContent.includes('打ち合いになった'), 'clash feedback');
       if (!progress(0)) throw new Error('Clash counted as a disarm');
+      await until(() => h.act?.name === 'CLASH' && h.act.t > 0.45, 'exchanging blows');
+      await checkBattleView();
       await repeat(() => alignSlash(true));
 
-      await lesson('打ち合い');
+      await nextLesson('打ち合い');
       await alignSlash(true);
       await until(() => $('#tutorial-status').textContent.includes('打ち落としになった'), 'disarm feedback');
       if (!progress(0)) throw new Error('Disarm counted as a clash');
@@ -126,7 +173,7 @@ async function run() {
     await page.locator('#btn-continue').tap();
     assert.equal(await page.evaluate(() => window.__game.G.stageIdx), 2);
     assert.deepEqual(errors, []);
-    console.log('All six tutorial lessons, timing feedback, replay, quit and campaign save isolation passed.');
+    console.log('All six tutorial lessons, combatant clearance, manual transitions, replay, quit and campaign save isolation passed.');
   } finally {
     await browser.close();
   }

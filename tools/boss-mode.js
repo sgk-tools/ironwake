@@ -7,7 +7,7 @@ async function run() {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage(devices['iPhone 15 Pro landscape']);
+    const page = await browser.newPage(devices['iPhone 15 Pro']);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
@@ -26,7 +26,7 @@ async function run() {
     assert.equal(await level.inputValue(), '');
     await level.blur();
     assert.equal(await level.inputValue(), '1');
-    for (const size of [{ width: 667, height: 375 }, { width: 390, height: 780 }]) {
+    for (const size of [{ width: 320, height: 568 }, { width: 390, height: 780 }]) {
       await page.setViewportSize(size);
       for (const button of [...await choices.all(), modal.getByRole('button', { name: '対戦する' })]) {
         const box = await button.boundingBox();

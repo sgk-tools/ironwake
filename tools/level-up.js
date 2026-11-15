@@ -11,7 +11,7 @@ async function run() {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage({ viewport: { width: 390, height: 360 }, hasTouch: true });
+    const page = await browser.newPage({ viewport: { width: 390, height: 568 }, hasTouch: true });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(url);
@@ -36,15 +36,15 @@ async function run() {
     const frozen = await freezeState();
     for (const button of buttons) {
       const box = await button.boundingBox();
-      assert.ok(box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 360);
+      assert.ok(box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 568);
     }
     assert.deepEqual(await freezeState(), frozen);
-    await page.setViewportSize({ width: 852, height: 393 });
+    await page.setViewportSize({ width: 393, height: 852 });
     await page.waitForFunction(frame => window.__game.renderer.info.render.frame > frame, frozen[1]);
     assert.equal((await freezeState())[0], frozen[0]);
     for (const button of buttons) {
       const box = await button.boundingBox();
-      assert.ok(box.height >= 44 && box.y >= 0 && box.y + box.height <= 393);
+      assert.ok(box.height >= 44 && box.y >= 0 && box.y + box.height <= 852);
     }
     if (process.env.IRONWAKE_LEVEL_UP_PREVIEW) await page.screenshot({ path: process.env.IRONWAKE_LEVEL_UP_PREVIEW });
     await page.keyboard.press('Space');
