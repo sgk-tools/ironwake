@@ -84,7 +84,7 @@ async function run() {
       for (const charging of [false, true]) {
         g.setBoss('walk', 99);
         Object.assign(boss, { x: 0, z: 2.5 });
-        Object.assign(h, { x: 0, z: 0, face: 0, act: null });
+        Object.assign(h, { x: 2.3, z: 0, face: 0, act: null });
         g.input.my = 1;
         g.input.press('dodge');
         g.input.held.delete('dodge');
