@@ -923,6 +923,7 @@ function beginLevelUp() {
   UI.hud.inert = true;
   input.clear(); input.resetButtons(); input.keys.clear(); input.resetStick();
   hero.pendingActions = {};
+  UI.wave.classList.remove('show'); clearTimeout(bannerTimer);   // the stage / wave banner would sit underneath the level-up text
   $('#lu-lv').textContent = `Lv ${hero.level}`;
   const el = $('#levelup-freeze');
   el.hidden = false; el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
