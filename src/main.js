@@ -694,6 +694,7 @@ function startAction(name) {
   const h = hero, def = HERO_ACTIONS[name];
   if (name !== 'SPIN_LOOP' && name !== 'SPIN_OUT') { h.pose.rootYaw = wrapAng(h.pose.rootYaw || 0); h.pose.rootPitch = wrapAng(h.pose.rootPitch || 0); }
   h.act = { name, t: 0, def, hitDone: false, swung: false, startT: G.time };
+  h.faceBossUntil = 0;
   if (LINK_MOVES.has(name)) noteLink();
   h.attackId++;
   const aim = h.aimNext !== false; h.aimNext = true;
@@ -948,6 +949,7 @@ const POWER_PER_RANK = 0.15;
 const LIGHT_RECOVERY = 0.22;
 const DODGE_IFRAMES = [0.24, 0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.44, 0.46, 0.48];
 const [, DODGE_MOVE_END, DODGE_MOVE_SPEED] = HERO_ACTIONS.DODGE.lunge;
+const DODGE_FACE_HOLD = 0.18;
 const dodgeInvulnerability = () => DODGE_IFRAMES[hero.stats.dodge - 1];
 const dodgeReaction = () => (STAT_MAX - hero.stats.dodge) * 0.01;
 const finishingDodgeCut = action => action?.dodgeTime != null
@@ -1243,6 +1245,7 @@ function updateHero(dt) {
   let moving = Math.hypot(mx, my);
   let turnAxis;
   let beginTurnHold = false;
+  let finishedDodge = false;
   const poseAction = h.act;
   if (h.act) {
     const a = h.act, d = a.def;
@@ -1279,6 +1282,7 @@ function updateHero(dt) {
       a.chargeReleased ||= !input.held.has('heavy');
       if (!a.chargeReleased) advanceCharge(dt);
       if (a.t >= d.dur) {
+        finishedDodge = true;
         h.heavyUsed = true;
         if (a.chargeReleased) releaseCharge();
         else startAction('CHARGE');
@@ -1304,6 +1308,7 @@ function updateHero(dt) {
         startLight(a.name, a.queuedDir, a.sideSpin);
       }
     } else if (a.t >= d.dur && !finishingDodgeCut(a)) {
+      finishedDodge = rolling || a.dodgeTime != null;
       if (a.light && h.lightCount >= lightLimit()) { h.lightRecovery = (h.monoRun || 0) >= MONO_FREE ? MONO_RECOVERY : LIGHT_RECOVERY; if (a.queued === 'light') input.pressed.add('attack'); }
       h.act = null;
       // full turns (rolls, spins, flips) end where they started: drop the extra 2*pi so the
@@ -1328,6 +1333,14 @@ function updateHero(dt) {
   // collisions
   if (!holdingTurn && !beginTurnHold) pushOut(h, 0.45);
   const r = Math.hypot(h.x, h.z); if (r > ARENA) { h.x *= ARENA / r; h.z *= ARENA / r; }
+
+  if (boss && !boss.dead && boss.state !== 'hidden') {
+    if (finishedDodge) h.faceBossUntil = G.time + DODGE_FACE_HOLD;
+    if ((finishedDodge || !h.act) && G.time < h.faceBossUntil) {
+      const dx = boss.x - h.x, dz = boss.z - h.z;
+      if (Math.hypot(dx, dz) > 0.05) h.face = Math.atan2(dx, dz);
+    }
+  }
 
   if (h.act && h.act !== poseAction) sampleKeys(h.act.def.keys, h.act.t, h.target);
   if (!holdingTurn) smoothPose(h.pose, h.target, Math.min(1, dt * 30));
@@ -2385,7 +2398,7 @@ function resetGame(keepLevel = false) {
   hero.lastSlashPress = null; hero.monoRun = 0;
   UI.statSelect.hidden = true; UI.hud.inert = false;
   hero.x = 0; hero.z = 0; hero.face = 0; hero.hp = hero.maxHp; hero.hpLag = hero.maxHp; hero.rage = 0; hero.rageT = 0;
-  hero.act = null; hero.dead = false; hero.iframe = 0; hero.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0;
+  hero.act = null; hero.dead = false; hero.iframe = 0; hero.faceBossUntil = 0; hero.mat.emissive.setRGB(0, 0, 0); rageLight.intensity = 0;
   if (boss) { restoreBossAxe(boss); boss.rig.root.visible = false; boss.state = 'hidden'; boss.hp = boss.maxHp; boss.dead = false; boss.poise = 0; }
   Object.assign(G, { time: 0, ko: 0, combo: 0, maxCombo: 0, comboT: 0, hitstop: 0, shake: 0, slowmo: 1, waveIdx: -1, spawnLeft: 0, waveDelay: 0, result: null, playTime: 0 });
   UI.bossBar.hidden = true; UI.combo.hidden = true;

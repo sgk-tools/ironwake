@@ -77,6 +77,37 @@ async function run() {
     for (const key of ['hp', 'speed', 'damage']) assert.ok(easy[key] < normal[key] && normal[key] < hard[key], key);
     assert.ok(Object.values(hard.stats).every(rank => rank === 10));
 
+    const dodges = await page.evaluate(async () => {
+      const g = window.__game, h = g.hero(), boss = g.boss();
+      const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+      const results = [];
+      for (const charging of [false, true]) {
+        g.setBoss('walk', 99);
+        Object.assign(boss, { x: 0, z: 2.5 });
+        Object.assign(h, { x: 0, z: 0, face: 0, act: null });
+        g.input.my = 1;
+        g.input.press('dodge');
+        g.input.held.delete('dodge');
+        await frame();
+        if (h.act?.name !== 'DODGE') throw new Error('Dodge did not start');
+        if (charging) g.input.press('heavy');
+        const deadline = performance.now() + 5000;
+        while (h.act?.name === 'DODGE' && performance.now() < deadline) await frame();
+        const facing = () => Math.cos(h.face - Math.atan2(boss.x - h.x, boss.z - h.z));
+        const alignAtEnd = facing();
+        // Keep the same forward input for one more frame after crossing.
+        await frame();
+        results.push({ charging, crossed: h.z > boss.z + 1, alignAtEnd, alignWithStick: facing(), action: h.act?.name });
+        g.input.held.delete('heavy');
+        g.input.my = 0;
+      }
+      return results;
+    });
+    for (const dodge of dodges) {
+      assert.ok(dodge.crossed && dodge.alignAtEnd > 0.99 && dodge.alignWithStick > 0.99, JSON.stringify(dodge));
+      assert.equal(dodge.action, dodge.charging ? 'CHARGE' : undefined);
+    }
+
     const strike = hp => page.evaluate(hp => {
       const g = window.__game, h = g.hero(), boss = g.boss();
       g.setBoss('walk', 99);
