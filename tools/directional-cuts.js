@@ -145,10 +145,14 @@ async function run() {
       assert.equal(move('L', 'R', heavy), 'XCUT_REV');
       assert.equal(move('R', 'L', heavy), 'XCUT');
       assert.equal(move('N', 'F', heavy), 'STEP_CUT');
-      assert.equal(move('N', 'B', heavy), heavy ? 'RETREAT_SWEEP' : 'BACKCUT');
+      assert.equal(move('N', 'B', heavy), heavy ? 'RETREAT_SWEEP' : 'RISING_STEP');
       assert.equal(move('B', 'B', heavy), heavy ? 'FIN2' : 'DOWNCUT');
     }
     assert.equal(move('B', 'N', false), 'AIR_SLASH');
+    assert.equal(move('B', 'L', false), 'AIR_CROSS');
+    assert.equal(move('B', 'R', false), 'AIR_CROSS');
+    assert.equal(move('B', 'F', true), 'AIR_DROP');
+    assert.equal(move('N', 'N', true), 'RISING_STEP');
     assert.equal(results.forwardFlip, 'JUMP_FLIP');
     assert.equal(results.forwardSlam, 'L6');
     assert.equal(results.fallingCut, 'DOWNCUT');

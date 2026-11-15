@@ -612,6 +612,10 @@ HERO_ACTIONS.HIGHCUT = { ...HERO_ACTIONS.L1, dmg: 24, keys: withEnd(cut('HIGH_R2
 HERO_ACTIONS.HIGHCUT2 = { ...HERO_ACTIONS.L1, dmg: 24, keys: withEnd(cut('HIGH_L2R'), 0.5) };
 HERO_ACTIONS.DOWNCUT = { ...HERO_ACTIONS.CROSS, dmg: 30, kb: 5, keys: withEnd(cut('TOP_DOWN'), 0.52) };
 HERO_ACTIONS.RISECUT = { ...HERO_ACTIONS.L1B, dmg: 26, up: 6, keys: withEnd(cut('RISE'), 0.52) };
+HERO_ACTIONS.RISING_STEP = {
+  ...HERO_ACTIONS.RISECUT, dmg: 28, kb: 1.5, up: 9, body: 1.55,
+  launcher: true, heavy: true, lunge: [0.03, 0.21, 5.8], sound: 'swingHeavy',
+};
 HERO_ACTIONS.LOWSWEEP2 = { ...HERO_ACTIONS.LOWSWEEP, keys: withEnd(cut('LOW_SWEEP_L2R'), 0.55) };
 
 // Directional chains: advancing cut, reverse cross, retreat sweep and a backward jump slam.
@@ -716,3 +720,14 @@ for (const id of DOUBLE_CUTS) {
     keys: [...CUTS[IK_OF[a]].map(([t, p, e]) => [t, p, e || 'io']), ...second, [+(end + 0.2).toFixed(3), HERO.idle, 'io']],
   };
 }
+
+const risingCross = HERO_ACTIONS['RISECUT+CROSS2'];
+HERO_ACTIONS.AIR_CROSS = {
+  ...risingCross, dmg: 22, kb: 1.25, up: 2.5, lunge: [0.02, 0.34, 8],
+  keys: risingCross.keys.map(([t, pose, ease]) => [t, {
+    ...pose, rootY: (pose.rootY || 0) + 1.5 * Math.sin(Math.PI * t / risingCross.dur),
+  }, ease]),
+};
+HERO_ACTIONS.AIR_DROP = scaleAction(HERO_ACTIONS.L6, 0.78, {
+  dmg: 43, kb: 7, up: 3, radius: 3.2, dropAirborne: true,
+});

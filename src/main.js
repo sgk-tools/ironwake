@@ -352,9 +352,9 @@ class FX {
     }
   }
   // bright impact: a star burst plus a long streak across the cut, tinted for kills
-  hitFlash(x, y, z, big = false, kill = false) {
+  hitFlash(x, y, z, big = false, kill = false, tint) {
     const add = (o) => { if (this.fl.length >= this.flMax) this.fl.shift(); this.fl.push(o); };
-    const col = kill ? [1.0, 0.55, 0.3] : [1.0, 0.85, 0.7];
+    const col = tint || (kill ? [1.0, 0.55, 0.3] : [1.0, 0.85, 0.7]);
     add({ x, y, z, w: big ? 2.2 : 1.5, h: big ? 2.2 : 1.5, rot: Math.random() * 6, life: 0.14, max: 0.14, col });
     add({ x, y, z, w: big ? 4.2 : 3.0, h: 0.22, rot: Math.random() * 6, life: 0.16, max: 0.16, col: [1.0, 0.95, 0.85] });
     if (kill) add({ x, y, z, w: 3.4, h: 0.16, rot: Math.random() * 6, life: 0.2, max: 0.2, col: [1.0, 0.4, 0.2] });
@@ -785,7 +785,7 @@ const DIRECTIONAL_CUTS = {
   BACK: { open: 'UPPER', light: ['DOWNCUT', 'BACK_LEAP', 'BACKCUT', 'RISECUT'], heavy: ['FIN2', 'BACK_LEAP'] },
 };
 const RETREAT_CUTS = new Set(['BACKCUT', 'RETREAT_SWEEP', 'BACK_LEAP']);
-const FINISHERS = { 1: ['UPPER', 'DRAG'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
+const FINISHERS = { 1: ['RISING_STEP'], 2: ['FIN2'], 3: ['RSPIN2', 'REVSPIN'], 4: ['L5'], 5: ['RLEAP', 'VAULT'] };
 
 // ---- more slash patterns -------------------------------------------------------------------------------
 // The first two cuts of a string (and a 3rd cut that repeats the same direction) keep the fixed directional table
@@ -875,8 +875,11 @@ function pickLight(prev, dir = readCutDirection()) {
   hero.lightCount = (hero.lightCount || 0) + 1;
   const chain = comboChain();
   hero.comboIdx = (hero.comboIdx + 1) % chain.length;
+  if (hero.act?.def.launcher) {
+    if (!dir) return 'AIR_SLASH';
+    if (dir === 'L90' || dir === 'R90') return 'AIR_CROSS';
+  }
   if (!dir) {
-    if (hero.act?.def.launcher) return 'AIR_SLASH';
     const step = (hero.lightCount - 1) % 6;
     const alternate = (hero.neutralChain + Math.floor((hero.lightCount - 1) / 6)) % 2;
     if (step === 1) {
@@ -894,7 +897,7 @@ function pickLight(prev, dir = readCutDirection()) {
   const reversal = reverseCut(previous?.cutDir, dir);
   if (reversal) return reversal;
   if (!previous?.cutDir && dir === 'FWD') return 'STEP_CUT';
-  if (!previous?.cutDir && dir === 'BACK') return 'BACKCUT';
+  if (!previous?.cutDir && dir === 'BACK') return 'RISING_STEP';
   const pool = DIRECTIONAL_CUTS[dir].light;
   const step = previous?.cutDir === dir ? previous.cutStep : 0;
   // The 3rd cut repeating the same direction stays on the fixed table (forward x3 = big leap, back x3 = back jump);
@@ -915,20 +918,24 @@ function startDirectedCut(name, dir, facing) {
   startAction(name);
 }
 
+function aimAtLaunchedEnemy(action) {
+  const target = action.launchTarget;
+  if (target && !target.dead && target.y > 0.25 && Math.hypot(target.x - hero.x, target.z - hero.z) < 6) {
+    hero.face = Math.atan2(target.x - hero.x, target.z - hero.z);
+    hero.aimNext = false;
+  }
+}
+
 function startLight(prev, dir = readCutDirection(), spin) {
   if (dir) noteLink(); else hero.monoRun = (hero.monoRun || 0) + 1;
   const previous = hero.act;
   const facing = cutFacing(previous);
   const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
   const next = pickLight(prev, dir);
-  const followLaunch = prev && previous?.def.launcher && !dir;
   const name = spin || next;
-  const target = followLaunch && previous.launchTarget;
-  if (target && !target.dead && target.y > 0.25 && Math.hypot(target.x - hero.x, target.z - hero.z) < 6) {
-    hero.face = Math.atan2(target.x - hero.x, target.z - hero.z);
-    hero.aimNext = false;
-  }
-  startDirectedCut(name, dir, facing);
+  const airFollow = name === 'AIR_SLASH' || name === 'AIR_CROSS';
+  if (airFollow) aimAtLaunchedEnemy(previous);
+  startDirectedCut(name, airFollow ? null : dir, facing);
   hero.act.light = true;
   hero.act.mono = hero.monoRun;
   hero.act.cutFacing = prev || dir ? facing : hero.face;
@@ -952,12 +959,14 @@ function startFinisher(action) {
   const h = hero;
   noteLink();
   const count = h.lightCount || 0;
-  if (count <= 0) { beginCharge(); startAction('CHARGE'); return; }
-
   const pressedDir = action.queuedHeavyDir || null;
+  const airDrop = action.def.launcher && pressedDir === 'FWD';
+  if (count <= 0 && !airDrop) { beginCharge(); startAction('CHARGE'); return; }
+
   const dir = pressedDir || action.cutDir;
-  const name = pickFinisher(count, dir, action);
-  startDirectedCut(name, dir, cutFacing(action));
+  if (airDrop) aimAtLaunchedEnemy(action);
+  const name = airDrop ? 'AIR_DROP' : pickFinisher(count, dir, action);
+  startDirectedCut(name, airDrop ? null : dir, cutFacing(action));
   h.lightCount = 0;
   recordSlashCommand('heavy', pressedDir, name);
   if (action.queuedHeavyDir) tutorialSuccess('slash');
@@ -1111,7 +1120,7 @@ function flowBucket(turn) {
   return side + (a < 1.18 ? '45' : a < 1.97 ? '90' : '135');
 }
 function queueLateSideSpin(a) {
-  if (tutorial?.pattern || !a?.light || a.queued === 'heavy' || a.queuedManual || hero.lightCount >= lightLimit()) return false;
+  if (tutorial?.pattern || !a?.light || a.def.launcher || a.queued === 'heavy' || a.queuedManual || hero.lightCount >= lightLimit()) return false;
   const dir = readCutDirection();
   const previous = a.sideInput === undefined ? a.cutDir : a.sideInput;
   a.sideInput = dir;
@@ -1475,6 +1484,7 @@ function heroHits(a) {
     if (hitBody || bladeTouches(e.x, e.z, def.radius + 0.25 + (d.reach || 0), e.y, e.y + 1.8 * def.scale)) {
       e.lastHit = h.attackId; any = true;
       damageEnemy(e, d.dmg * mult * monoFactor(a, false), knockback, d.up || 0, hitBody || !!d.heavy, undefined, undefined, bonusLift);
+      if (d.dropAirborne && e.y > 0.25) e.vy = -9;
       if (d.launcher && !e.dead) a.launchTarget ||= e;
     }
   }
@@ -1505,6 +1515,7 @@ function impact(a) {
     if (dist < d.radius + ENEMY[e.type].radius && e.lastHit !== h.attackId + 0.5) {
       e.lastHit = h.attackId + 0.5;
       damageEnemy(e, d.dmg * mult * (1 - dist / (d.radius * 2)), d.kb * dmgMul(), d.up, true, cx, cz);
+      if (d.dropAirborne && e.y > 0.25) e.vy = -9;
     }
   }
   if (boss && !boss.dead && boss.state !== 'hidden' && Math.hypot(boss.x - cx, boss.z - cz) < d.radius + 1.2) damageBoss(d.dmg * mult * 0.8, 0.12);
@@ -1571,6 +1582,7 @@ function hurtHero(dmg, fromX, fromZ) {
 
 // ======================================================================= boss parry and disarm
 const PARRY_WIN = 0.4, DISARM_WIN = 0.035, GLINT_AT = 0.55;
+const DISARM_FLASH_TINT = [0.5, 0.87, 1.0];
 const NO_PARRY = new Set(['CHARGE', 'HURT', 'DODGE', 'RAGE', 'DEATH']);
 const bossScale = () => boss?.scale || 2.3;
 const bossRadius = () => 1.2 * bossScale() / 2.3;
@@ -1691,14 +1703,18 @@ function startDisarm() {
   const angle = Math.hypot(h.x - b.x, h.z - b.z) > 0.3
     ? Math.atan2(h.x - b.x, h.z - b.z) : h.face + Math.PI;
   const side = angle + Math.PI / 2;
-  b.droppedAxe = { mesh, vx: Math.sin(side) * 4.6, vz: Math.cos(side) * 4.6, vy: 2.2 };
+  b.droppedAxe = { mesh, vx: Math.sin(side) * 4.6, vz: Math.cos(side) * 4.6, vy: 2.2, sparkT: 0 };
   b.axe.visible = false;
   scene.add(mesh);
   const { x, y, z } = mesh.position;
-  fx.hitFlash(x, y, z, true, true);
-  fx.spark(x, y, z, 60);
-  fx.ring(x, z, 3.6, 0x78e1ff, 0.5);
+  fx.hitFlash(x, y, z, true, false, DISARM_FLASH_TINT);
+  fx.hitFlash(x, y + 0.3, z, true, false, DISARM_FLASH_TINT);
+  fx.spark(x, y, z, 72);
+  fx.ring(x, z, 3.3, 0xd4f9ff, 0.3);
+  fx.ring(x, z, 5.4, 0x4dbbff, 0.58);
   G.hitstop = Math.max(G.hitstop, 0.21);
+  G.shake = Math.max(G.shake, 0.95);
+  sfx.play('clang', 1.0);
   const gap = 2.5 * bossScale() / 2.3;
   h.x = b.x + Math.sin(angle) * gap;
   h.z = b.z + Math.cos(angle) * gap;
@@ -1712,20 +1728,24 @@ function updateDroppedAxe(b, dt) {
   if (!drop) return;
   const { mesh } = drop;
   if (mesh.position.y <= 0.32 && drop.vy <= 0) return;
-  if (Math.random() < Math.min(1, dt * 24)) {
-    fx.spark(mesh.position.x, mesh.position.y, mesh.position.z, 3);
-  }
   drop.vy -= 17 * dt;
   mesh.position.x += drop.vx * dt;
   mesh.position.z += drop.vz * dt;
   mesh.position.y = Math.max(0.32, mesh.position.y + drop.vy * dt);
   mesh.rotateX(7 * dt);
   mesh.rotateZ(3 * dt);
+  drop.sparkT -= dt;
+  if (drop.sparkT <= 0 && mesh.position.y > 0.32) {
+    fx.spark(mesh.position.x, mesh.position.y, mesh.position.z, 5);
+    drop.sparkT = 0.055;
+  }
   if (mesh.position.y === 0.32) {
     mesh.rotation.set(Math.PI / 2, mesh.rotation.y, 0);
-    fx.hitFlash(mesh.position.x, 0.35, mesh.position.z);
-    fx.spark(mesh.position.x, 0.35, mesh.position.z, 24);
-    fx.ring(mesh.position.x, mesh.position.z, 2.1, 0x78e1ff, 0.38);
+    fx.hitFlash(mesh.position.x, 0.35, mesh.position.z, true, false, DISARM_FLASH_TINT);
+    fx.spark(mesh.position.x, 0.35, mesh.position.z, 32);
+    fx.ring(mesh.position.x, mesh.position.z, 2.1, 0xd4f9ff, 0.32);
+    fx.ring(mesh.position.x, mesh.position.z, 3.4, 0x4dbbff, 0.48);
+    G.shake = Math.max(G.shake, 0.4);
     sfx.play('clang', 0.8);
   }
 }
