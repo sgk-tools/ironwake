@@ -313,6 +313,11 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   .logo .jp { font-size: 32px; }
   .logo .en { display: none; }
 }
+@media (orientation: portrait) and (max-height: 650px) {
+  .title-inner { gap: 8px; }
+  .title-inner .lede { display: none; }
+  .title-actions { gap: 6px; }
+}
 @media (prefers-reduced-motion: reduce) { #combo.pop #combo-n, body.rage-ready #rage-fill, #btn-rage.ready { animation: none; } }
 </style>
 
