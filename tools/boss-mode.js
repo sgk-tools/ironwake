@@ -19,6 +19,13 @@ async function run() {
     const choices = modal.locator('.boss-options button');
     assert.deepEqual(await choices.allTextContents(), names);
     assert.equal(await level.getAttribute('max'), '46');
+    assert.equal(await modal.locator('#boss-level-range').textContent(), 'Lv1〜46');
+    await level.fill('999');
+    assert.equal(await level.inputValue(), '46');
+    await level.fill('');
+    assert.equal(await level.inputValue(), '');
+    await level.blur();
+    assert.equal(await level.inputValue(), '1');
     for (const size of [{ width: 667, height: 375 }, { width: 390, height: 780 }]) {
       await page.setViewportSize(size);
       for (const button of [...await choices.all(), modal.getByRole('button', { name: '対戦する' })]) {

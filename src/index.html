@@ -309,7 +309,8 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       </fieldset>
       <div class="boss-level-row">
         <label for="boss-level">自分のレベル</label>
-        <input type="number" inputmode="numeric" id="boss-level" min="1" step="1" value="1">
+        <input type="number" inputmode="numeric" id="boss-level" min="1" step="1" value="1" aria-describedby="boss-level-range">
+        <span id="boss-level-range"></span>
       </div>
       <div class="row">
         <button type="button" class="btn-primary" id="btn-boss-start">対戦する</button>

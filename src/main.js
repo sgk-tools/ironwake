@@ -2417,6 +2417,17 @@ function setupBossBattle() {
   const list = $('#boss-options');
   let selectedBoss = 0;
   level.max = LEVEL_MAX;
+  $('#boss-level-range').textContent = `Lv${level.min}〜${LEVEL_MAX}`;
+
+  function normalizeLevel() {
+    const rank = Math.max(Number(level.min), Math.min(LEVEL_MAX, Math.round(level.valueAsNumber || 1)));
+    level.value = rank;
+    return rank;
+  }
+  level.addEventListener('input', () => {
+    if (level.valueAsNumber > LEVEL_MAX) level.value = LEVEL_MAX;
+  });
+  level.addEventListener('blur', normalizeLevel);
 
   const choices = STAGES.map(({ boss: opponent }, index) => {
     const button = document.createElement('button');
@@ -2453,8 +2464,7 @@ function setupBossBattle() {
     }
   });
   $('#btn-boss-start').addEventListener('click', () => {
-    const rank = Math.max(1, Math.min(LEVEL_MAX, Math.round(level.valueAsNumber || 1)));
-    level.value = rank;
+    const rank = normalizeLevel();
     const difficulty = $('input[name="boss-difficulty"]:checked').value;
     setOpen(false);
     startGame(selectedBoss, rank, 0, undefined, difficulty, 'boss');
