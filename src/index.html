@@ -45,7 +45,9 @@ button:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
 
 /* ---------- title ---------- */
 #title {
-  position: fixed; inset: 0; z-index: 40; display: grid; align-content: end;
+  position: fixed; inset: 0; z-index: 40; display: grid; align-content: start; align-content: safe end;
+  overflow-y: auto; touch-action: pan-y;
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
   padding: var(--st) var(--sr) var(--sb) var(--sl);
   background:
     linear-gradient(180deg, rgba(13,7,6,0) 30%, rgba(13,7,6,0.85) 78%, var(--ink) 100%),
@@ -202,9 +204,11 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 .panel { display: grid; gap: 16px; justify-items: center; text-align: center; width: min(460px, 100%); }
 .panel h2 { font-family: var(--f-display); font-size: clamp(34px, 6vw, 48px); letter-spacing: 0.3em; padding-left: 0.3em; margin: 0; text-wrap: balance; }
 .panel p { margin: 0; color: var(--ash-dim); font-size: 14px; letter-spacing: 0.06em; }
-#weapon-picker, #boss-setup, #slash-setup { grid-template-rows: minmax(0, 1fr); }
-#weapon-picker .panel, #boss-setup .panel, #slash-setup .panel { width: min(400px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; gap: 12px; padding: 16px; background: var(--ink); border: 1px solid #817258; border-radius: 6px; }
-#weapon-picker h2, #boss-setup h2, #slash-setup h2 { font-size: clamp(22px, 5vw, 30px); letter-spacing: 0.08em; }
+#weapon-picker, #boss-setup, #slash-setup, #controls-guide { grid-template-rows: minmax(0, 1fr); }
+#weapon-picker .panel, #boss-setup .panel, #slash-setup .panel, #controls-guide .panel { width: min(400px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; gap: 12px; padding: 16px; background: var(--ink); border: 1px solid #817258; border-radius: 6px; }
+#weapon-picker h2, #boss-setup h2, #slash-setup h2, #controls-guide h2 { font-size: clamp(22px, 5vw, 30px); letter-spacing: 0.08em; }
+#controls-guide .panel { width: min(540px, 100%); text-align: left; overflow: hidden; }
+#controls-guide .keys { width: 100%; max-height: min(48vh, 320px); overflow-y: auto; touch-action: pan-y; }
 #slash-setup .panel { width: min(580px, 100%); text-align: left; }
 #slash-options { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
 #slash-options button { min-height: 44px; padding: 5px 7px; border: 1px solid #817258; border-radius: 6px; background: #242019; }
@@ -280,6 +284,18 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 #result:not(.win) h2 { color: #d9a59a; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 @media (max-height: 420px) { .title-inner { gap: 8px; } .lede { display: none; } .pad { transform: scale(0.88); transform-origin: right bottom; } }
+@media (orientation: landscape) and (max-height: 500px) {
+  .title-inner .eyebrow { display: none; }
+  .logo .jp { font-size: clamp(28px, 6vw, 48px); }
+  .logo .en { margin-top: 5px; }
+  .title-actions { gap: 6px; margin-top: 0; }
+  .title-actions > button { min-height: 44px; padding: 6px 12px; }
+}
+@media (orientation: landscape) and (max-height: 300px) {
+  .title-inner { gap: 6px; }
+  .logo .jp { font-size: 32px; }
+  .logo .en { display: none; }
+}
 @media (prefers-reduced-motion: reduce) { #combo.pop #combo-n, body.rage-ready #rage-fill, #btn-rage.ready { animation: none; } }
 </style>
 
@@ -316,10 +332,17 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
       <button type="button" class="btn-ghost" id="btn-slash-tutorial" aria-haspopup="dialog" aria-controls="slash-setup" aria-expanded="false">斬撃チュートリアル</button>
       <button type="button" class="btn-ghost" id="btn-boss-mode" aria-haspopup="dialog" aria-controls="boss-setup" aria-expanded="false">ボス戦</button>
       <button class="btn-ghost" id="btn-continue" hidden>続きから</button>
+      <button type="button" class="btn-ghost" id="btn-controls-guide" aria-haspopup="dialog" aria-controls="controls-guide" aria-expanded="false">操作ガイド</button>
       <span class="rotate-hint">端末を横向きにすると遊びやすい</span>
     </div>
-    <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（1回押すと1回攻撃。前後左右・斜めで技が変化、回避中は反撃。同じ斬の連打は威力が落ち、方向・重・避を挟むと戻る） ／ <b>重</b>長押しで溜めて離すと回転斬り（回避中から溜められ、長く溜めると威力と吹き飛びが増える）、斬の途中で方向＋重を押すと締め技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>組み合わせ：斬の回数 × 方向 × <b>重</b>／<b>避</b>で技が変わる（3回目以降は新しい技が出る。技術が上がるほど連撃の技が増える） ／ 後ろ＋<b>斬</b>で打ち上げ、方向を離して<b>斬</b>で空中追撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 命中寸前に<b>斬</b>を合わせると武器を落とす</div>
-    <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（1回押すと1回攻撃。前後左右・斜めで技が変化、回避中は反撃。同じ斬の連打は威力が落ち、方向・K・Spaceを挟むと戻る） ／ <b>K</b> 長押しで溜め回転斬り（回避中から溜め可）・斬の途中で方向＋Kを押すと締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>組み合わせ：斬の回数 × 方向 × <b>K</b>／<b>Space</b>で技が変わる（3回目以降は新しい技が出る。技術が上がるほど連撃の技が増える） ／ 後ろ＋<b>J</b>で打ち上げ、方向を離して<b>J</b>で空中追撃<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 命中寸前に <b>J</b> を合わせると武器を落とす</div>
+  </div>
+  <div id="controls-guide" class="overlay" role="dialog" aria-modal="true" aria-labelledby="controls-guide-title" hidden>
+    <div class="panel">
+      <h2 id="controls-guide-title">操作ガイド</h2>
+      <button type="button" class="btn-ghost" id="btn-controls-close">閉じる</button>
+      <div class="keys touch">左側をなぞって<b>移動</b> ／ <b>斬</b>連撃（1回押すと1回攻撃。前後左右・斜めで技が変化、回避中は反撃。同じ斬の連打は威力が落ち、方向・重・避を挟むと戻る） ／ <b>重</b>長押しで溜めて離すと回転斬り（回避中から溜められ、長く溜めると威力と吹き飛びが増える）、斬の途中で方向＋重を押すと締め技 ／ <b>避</b>回避 ／ <b>覚醒</b>専用連撃<br>組み合わせ：斬の回数 × 方向 × <b>重</b>／<b>避</b>で技が変わる（3回目以降は新しい技が出る。技術が上がるほど連撃の技が増える） ／ 後ろ＋<b>斬</b>で打ち上げ、方向を離して<b>斬</b>で空中追撃<br>ボス戦：武器が光ったら<b>斬</b>で弾く ／ 命中寸前に<b>斬</b>を合わせると武器を落とす</div>
+      <div class="keys desk"><b>WASD</b> 移動 ／ <b>J</b> 連撃（1回押すと1回攻撃。前後左右・斜めで技が変化、回避中は反撃。同じ斬の連打は威力が落ち、方向・K・Spaceを挟むと戻る） ／ <b>K</b> 長押しで溜め回転斬り（回避中から溜め可）・斬の途中で方向＋Kを押すと締め技 ／ <b>Space</b> 回避 ／ <b>U</b> 覚醒 ／ <b>P</b> 一時停止<br>組み合わせ：斬の回数 × 方向 × <b>K</b>／<b>Space</b>で技が変わる（3回目以降は新しい技が出る。技術が上がるほど連撃の技が増える） ／ 後ろ＋<b>J</b>で打ち上げ、方向を離して<b>J</b>で空中追撃<br>ボス戦：武器が光ったら <b>J</b> で弾く ／ 命中寸前に <b>J</b> を合わせると武器を落とす</div>
+    </div>
   </div>
   <div id="weapon-picker" class="overlay" role="dialog" aria-modal="true" aria-labelledby="weapon-picker-title" hidden>
     <div class="panel">

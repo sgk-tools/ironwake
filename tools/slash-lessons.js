@@ -13,6 +13,38 @@ async function run() {
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
     const trigger = page.getByRole('button', { name: '斬撃チュートリアル' });
     await trigger.waitFor({ timeout: 120000 });
+    await page.evaluate(() => {
+      localStorage.setItem('ironwake-save-v1', JSON.stringify({ stage: 1, level: 1, exp: 0 }));
+      document.querySelector('input[name="difficulty"]:checked').dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    for (const size of [{ width: 568, height: 280 }, { width: 568, height: 320 }, { width: 852, height: 393 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(size);
+      await page.evaluate(() => {
+        const style = document.documentElement.style;
+        if (matchMedia('(orientation: landscape)').matches) {
+          style.setProperty('--sl', '47px');
+          style.setProperty('--sr', '47px');
+        } else {
+          style.removeProperty('--sl');
+          style.removeProperty('--sr');
+        }
+      });
+      for (const id of ['btn-start', 'btn-tutorial', 'btn-slash-tutorial', 'btn-continue', 'btn-boss-mode', 'btn-controls-guide']) {
+        const box = await page.locator('#' + id).boundingBox();
+        assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= size.width && box.y + box.height <= size.height,
+          JSON.stringify({ size, id, box }));
+      }
+      const controls = page.getByRole('dialog', { name: '操作ガイド' });
+      await page.getByRole('button', { name: '操作ガイド', exact: true }).tap();
+      const helpText = controls.locator('.keys.touch');
+      assert.match(await helpText.innerText(), /左側をなぞって移動/);
+      await helpText.evaluate(el => { el.scrollTop = el.scrollHeight; });
+      const close = controls.getByRole('button', { name: '閉じる' });
+      const closeBox = await close.boundingBox();
+      assert.ok(closeBox && closeBox.y >= 0 && closeBox.y + closeBox.height <= size.height);
+      await close.tap();
+      await controls.waitFor({ state: 'hidden' });
+    }
     await trigger.tap();
     const modal = page.getByRole('dialog', { name: '斬撃チュートリアル' });
     const buttons = modal.locator('[data-slash]');
@@ -75,6 +107,44 @@ async function run() {
         if (list.querySelector('[aria-current="step"]')) throw new Error(`${lesson.move}: still highlighting a finished step`);
       }
       const catalog = g.SLASH_LESSONS;
+      const slam = catalog.find(lesson => lesson.move === 'FIN2');
+      const zone = $('#stick-zone');
+      const bounds = zone.getBoundingClientRect();
+      const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2;
+      const touch = (target, type, id, clientX = 0, clientY = 0) =>
+        target.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: id, clientX, clientY }));
+      const tilt = (degrees, pixels) => {
+        const radians = degrees * Math.PI / 180;
+        touch(window, 'pointermove', 21, x + pixels * Math.sin(radians), y - pixels * Math.cos(radians));
+      };
+      const pressButton = name => { touch($('#btn-' + name), 'pointerdown', 22); touch(window, 'pointerup', 22); };
+
+      g.startGame(0, 1, 0, undefined, 'normal', 'tutorial', slam);
+      touch(zone, 'pointerdown', 21, x, y);
+      tilt(52, 50);
+      pressButton('attack');
+      await frame();
+      touch(window, 'pointerup', 21);
+      if (h.act?.name !== 'HIGHCUT2' || $('#tutorial-progress').textContent !== '0 / 3 回') {
+        throw new Error('An intentional diagonal must stay diagonal');
+      }
+
+      for (const [up, down, pixels] of [[35, 145, 48], [-35, 215, 48], [25, 155, 20]]) {
+        g.startGame(0, 1, 0, undefined, 'normal', 'tutorial', slam);
+        touch(zone, 'pointerdown', 21, x, y);
+        tilt(up, pixels);
+        pressButton('attack');
+        await frame();
+        if (h.act?.name !== 'DASH') throw new Error(`Tilt at ${up} degrees was not accepted as up`);
+        h.act.t = Math.max(h.act.def.chainAt, h.act.def.active[1] + 0.002);
+        tilt(down, pixels);
+        pressButton('heavy');
+        await frame();
+        touch(window, 'pointerup', 21);
+        if (h.act?.name !== 'FIN2' || $('#tutorial-progress').textContent !== '1 / 3 回') {
+          throw new Error(`Tilt at ${down} degrees was not accepted as down + heavy`);
+        }
+      }
       for (const lesson of catalog) {
         g.startGame(0, 1, 0, undefined, 'normal', 'tutorial', lesson);
         await frame();
@@ -157,7 +227,7 @@ async function run() {
       }
     }
     assert.deepEqual(errors, []);
-    console.log(`${lessons.length} slash lessons, unobstructed landscape hero, persistent steps and separated HUD counters passed.`);
+    console.log(`${lessons.length} slash lessons, forgiving vertical touch input, landscape hero clearance and separated HUD counters passed.`);
   } finally {
     await browser.close();
   }

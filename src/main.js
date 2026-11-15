@@ -830,8 +830,14 @@ function cutFacing(action = hero.act) {
 
 function readCutDirection(facing = cutFacing()) {
   const [mx, my] = input.move();
-  if (Math.hypot(mx, my) < 0.3) return null;
-  return flowBucket(angLerp(facing, Math.atan2(-mx, my), 1) - facing);
+  const strength = Math.hypot(mx, my);
+  if (strength < 0.2) return null;
+  const turn = angLerp(facing, Math.atan2(-mx, my), 1) - facing;
+  const expected = tutorial?.pattern?.commands[tutorial.step]?.dir;
+  const verticalTolerance = Math.PI * 2 / 9; // 40 degrees from the requested vertical direction
+  if (expected === 'FWD' && Math.abs(turn) <= verticalTolerance) return 'FWD';
+  if (expected === 'BACK' && Math.PI - Math.abs(turn) <= verticalTolerance) return 'BACK';
+  return strength < 0.3 ? null : flowBucket(turn);
 }
 
 function reverseCut(previousDirection, direction) {
@@ -2700,6 +2706,28 @@ function setupBossBattle() {
   });
 }
 
+function setupControlsGuide() {
+  const trigger = $('#btn-controls-guide'), modal = $('#controls-guide');
+  const close = $('#btn-controls-close'), titleContent = $('.title-inner');
+  function show(open) {
+    modal.hidden = !open;
+    titleContent.inert = open;
+    trigger.setAttribute('aria-expanded', String(open));
+    (open ? close : trigger).focus({ preventScroll: true });
+  }
+  trigger.addEventListener('click', () => show(true));
+  close.addEventListener('click', () => show(false));
+  modal.addEventListener('click', event => { if (event.target === modal) show(false); });
+  modal.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Tab') event.preventDefault();
+    if (event.key === 'Escape') { event.preventDefault(); show(false); }
+  });
+  matchMedia('(orientation: landscape)').addEventListener('change', () => {
+    if (!UI.title.hidden) UI.title.scrollTop = 0;
+  });
+}
+
 function setupSlashTraining() {
   const trigger = $('#btn-slash-tutorial'), modal = $('#slash-setup'), list = $('#slash-options');
   const close = $('#btn-slash-close'), titleContent = $('.title-inner');
@@ -2761,6 +2789,7 @@ async function boot() {
   setupWeaponPicker();
   setupBossBattle();
   setupSlashTraining();
+  setupControlsGuide();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
   window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS, SLASH_LESSONS };
@@ -2790,12 +2819,14 @@ $('#btn-continue').addEventListener('click', () => {
 // retry keeps the level reached on this battlefield
 $('#btn-retry').addEventListener('click', () => startGame(G.stageIdx, hero.level, hero.exp, hero.stats, G.difficulty, G.mode));
 $('#btn-next').addEventListener('click', () => startGame(G.stageIdx + 1, hero.level, hero.exp, hero.stats, G.difficulty));
-$('#btn-title').addEventListener('click', () => { UI.result.hidden = true; UI.title.hidden = false; resetGame(); G.state = 'title'; refreshContinue(); });
+$('#btn-title').addEventListener('click', returnToTitle);
 $('#btn-pause').addEventListener('click', () => setPaused(true));
 $('#btn-resume').addEventListener('click', () => setPaused(false));
 function returnToTitle() {
   setPaused(false); G.state = 'title'; sfx.stopMusic(); resetGame();
-  UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false; refreshContinue();
+  UI.result.hidden = true; UI.pause.hidden = true; UI.hud.hidden = true; UI.title.hidden = false;
+  UI.title.scrollTop = 0;
+  refreshContinue();
 }
 $('#btn-quit').addEventListener('click', returnToTitle);
 $('#btn-sound').addEventListener('click', (e) => { sfx.unlock(); sfx.setMuted(!sfx.muted); e.currentTarget.classList.toggle('off', sfx.muted); e.currentTarget.setAttribute('aria-pressed', String(sfx.muted)); });
