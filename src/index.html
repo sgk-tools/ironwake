@@ -194,10 +194,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
 #weapon-picker .panel, #boss-setup .panel, #slash-setup .panel { width: min(400px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; gap: 12px; padding: 16px; background: var(--ink); border: 1px solid #817258; border-radius: 6px; }
 #weapon-picker h2, #boss-setup h2, #slash-setup h2 { font-size: clamp(22px, 5vw, 30px); letter-spacing: 0.08em; }
 #slash-setup .panel { width: min(580px, 100%); text-align: left; }
-#slash-options { width: 100%; display: grid; gap: 8px; }
-#slash-options details { border-top: 1px solid #584537; }
-#slash-options summary { padding: 10px 4px; cursor: pointer; }
-#slash-options .slash-moves { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+#slash-options { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
 #slash-options button { min-height: 44px; padding: 5px 7px; border: 1px solid #817258; border-radius: 6px; background: #242019; }
 #btn-slash-tutorial, #btn-slash-close { min-height: 44px; }
 .weapon-options, .boss-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
@@ -343,7 +340,7 @@ body.raging #hud::after { content: ""; position: absolute; inset: 0; pointer-eve
   <div id="slash-setup" class="overlay" role="dialog" aria-modal="true" aria-labelledby="slash-setup-title" hidden>
     <div class="panel">
       <h2 id="slash-setup-title">斬撃チュートリアル</h2>
-      <p>技を選び、表示された操作で3回成功させる。候補から技が選ばれる場面では、練習中は選んだ手順どおりの技が出る。</p>
+      <p>代表技から練習したいものを選ぶ。矢印は画面上の向き。</p>
       <button type="button" class="btn-ghost" id="btn-slash-close">閉じる</button>
       <div id="slash-options"></div>
     </div>

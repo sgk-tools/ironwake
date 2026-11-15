@@ -5,7 +5,7 @@ import { Sfx } from './audio.js';
 import { EXTRA_WEAPONS } from './extra-weapons.js';
 import { BUILTIN_WEAPONS, STANDARD_DECO, applyGrowth, pulseWeapon, GROW_TEXT, GROW_MAX } from './weapons.js';
 import { JOINTS, ORDER, HERO, HERO_ACTIONS, heroRun, sampleKeys, smoothPose, lerpPose, gruntPose, bossPose, CUT_VARIANTS, DOUBLE_CUTS } from './anim.js';
-import { buildSlashLessons, SLASH_DIRECTIONS, SLASH_GROUPS } from './slash-lessons.js';
+import { SLASH_LESSONS, SLASH_DIRECTIONS } from './slash-lessons.js';
 
 // ======================================================================= setup
 const $ = (s) => document.querySelector(s);
@@ -717,10 +717,10 @@ function startAction(name) {
 }
 
 // Neutral light chains have a pool of moves per step; awakening has its own chain.
-function comboChain(actor = hero) {
-  const technique = actor.stats.technique;
-  if (actor.rageT > 0) {
-    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(actor.level >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(actor.level >= 5 ? [['RFLIP']] : []), ['RLEAP']];
+function comboChain() {
+  const technique = hero.stats.technique;
+  if (hero.rageT > 0) {
+    return [['L1', 'L1B', 'LOWSWEEP', 'CROSS'], ['RFLIP', 'WHEEL'], ['L2', 'XCUT', 'REVSPIN', 'L2B'], ['RSPIN2', 'SPIN1'], ...(hero.level >= 3 ? [['L4', 'SPIN1', 'REVSPIN']] : []), ...(hero.level >= 5 ? [['RFLIP']] : []), ['RLEAP']];
   }
   // higher technique adds quick / weighty versions and double cuts to the pools, and longer strings
   const t = technique;
@@ -745,9 +745,6 @@ function readDir() {
   const [mx, my] = input.move();
   if (Math.hypot(mx, my) < 0.3) return null;
   const rel = angLerp(hero.face, Math.atan2(-mx, my), 1) - hero.face;   // < 0: hero's right
-  return fourWayDirection(rel);
-}
-function fourWayDirection(rel) {
   if (Math.abs(rel) < 0.8) return 'fwd';
   if (Math.abs(rel) > 2.3) return 'back';
   return rel < 0 ? 'right' : 'left';
@@ -826,7 +823,12 @@ const DODGE_EXT = {
 const dodgeBucket = (n) => n <= 2 ? 0 : n <= 4 ? 1 : n <= 6 ? 2 : 3;
 const dodgeCutFor = (n, dir) => DODGE_EXT[dir || 'N'][dodgeBucket(n)];
 
-function readCutDirection(facing = hero.act?.cutFacing ?? hero.face) {
+function cutFacing(action = hero.act) {
+  // The arrows shown in a slash lesson follow the screen even after the hero turns.
+  return tutorial?.pattern ? 0 : action?.cutFacing ?? hero.face;
+}
+
+function readCutDirection(facing = cutFacing()) {
   const [mx, my] = input.move();
   if (Math.hypot(mx, my) < 0.3) return null;
   return flowBucket(angLerp(facing, Math.atan2(-mx, my), 1) - facing);
@@ -838,19 +840,19 @@ function reverseCut(previousDirection, direction) {
   return null;
 }
 
-function pickLight(prev, dir = readCutDirection(), actor = hero, choose = pickFrom) {
+function pickLight(prev, dir = readCutDirection()) {
   if (!prev) {
-    actor.comboIdx = 0; actor.lightCount = 1;
-    if (!dir) actor.neutralChain++;
-    return dir ? DIRECTIONAL_CUTS[dir].open : choose(comboChain(actor)[0], null);
+    hero.comboIdx = 0; hero.lightCount = 1;
+    if (!dir) hero.neutralChain++;
+    return dir ? DIRECTIONAL_CUTS[dir].open : pickFrom(comboChain()[0], null);
   }
-  actor.lightCount = (actor.lightCount || 0) + 1;
-  const chain = comboChain(actor);
-  actor.comboIdx = (actor.comboIdx + 1) % chain.length;
+  hero.lightCount = (hero.lightCount || 0) + 1;
+  const chain = comboChain();
+  hero.comboIdx = (hero.comboIdx + 1) % chain.length;
   if (!dir) {
-    if (actor.act?.def.launcher) return 'AIR_SLASH';
-    const step = (actor.lightCount - 1) % 6;
-    const alternate = (actor.neutralChain + Math.floor((actor.lightCount - 1) / 6)) % 2;
+    if (hero.act?.def.launcher) return 'AIR_SLASH';
+    const step = (hero.lightCount - 1) % 6;
+    const alternate = (hero.neutralChain + Math.floor((hero.lightCount - 1) / 6)) % 2;
     if (step === 1) {
       const spin = alternate ? 'SPIN1' : 'REVSPIN';
       return spin === prev ? (spin === 'SPIN1' ? 'REVSPIN' : 'SPIN1') : spin;
@@ -859,10 +861,10 @@ function pickLight(prev, dir = readCutDirection(), actor = hero, choose = pickFr
       const cut = alternate ? 'JUMP_SPIN' : 'JUMP_FLIP';
       return cut === prev ? (cut === 'JUMP_SPIN' ? 'JUMP_FLIP' : 'JUMP_SPIN') : cut;
     }
-    return choose(chain[actor.comboIdx], prev);
+    return pickFrom(chain[hero.comboIdx], prev);
   }
 
-  const previous = actor.act;
+  const previous = hero.act;
   const reversal = reverseCut(previous?.cutDir, dir);
   if (reversal) return reversal;
   if (!previous?.cutDir && dir === 'FWD') return 'STEP_CUT';
@@ -871,7 +873,7 @@ function pickLight(prev, dir = readCutDirection(), actor = hero, choose = pickFr
   const step = previous?.cutDir === dir ? previous.cutStep : 0;
   // The 3rd cut repeating the same direction stays on the fixed table (forward x3 = big leap, back x3 = back jump);
   // every other cut from the 3rd on is chosen by the count-aware table.
-  if (actor.lightCount >= 4 || (actor.lightCount === 3 && step === 0)) return extendedLight(dir, actor.lightCount, step, prev);
+  if (hero.lightCount >= 4 || (hero.lightCount === 3 && step === 0)) return extendedLight(dir, hero.lightCount, step, prev);
   const name = pool[step % pool.length];
   return name === prev ? pool[(step + 1) % pool.length] : name;
 }
@@ -890,9 +892,9 @@ function startDirectedCut(name, dir, facing) {
 function startLight(prev, dir = readCutDirection(), spin) {
   if (dir) noteLink(); else hero.monoRun = (hero.monoRun || 0) + 1;
   const previous = hero.act;
-  const facing = previous?.cutFacing ?? hero.face;
+  const facing = cutFacing(previous);
   const step = prev && previous?.cutDir === dir ? (previous.cutStep || 0) + 1 : prev && dir ? 1 : 0;
-  const next = pickLight(prev, dir, hero, tutorialChoice('light', dir, !prev));
+  const next = pickLight(prev, dir);
   const followLaunch = prev && previous?.def.launcher && !dir;
   const name = spin || next;
   const target = followLaunch && previous.launchTarget;
@@ -909,9 +911,9 @@ function startLight(prev, dir = readCutDirection(), spin) {
   recordSlashCommand('light', dir, name, !prev);
 }
 
-function pickFinisher(count, dir, action, choose = pickFrom) {
+function pickFinisher(count, dir, action) {
   if (count >= 3) return finisherFor(count, dir, action.name);
-  if (!dir) return choose(FINISHERS[count], null);
+  if (!dir) return pickFrom(FINISHERS[count], null);
   const reversal = reverseCut(action.cutDir, dir);
   const pool = DIRECTIONAL_CUTS[dir].heavy;
   const name = reversal || (!action.cutDir && dir === 'FWD' ? 'STEP_CUT'
@@ -928,8 +930,8 @@ function startFinisher(action) {
 
   const pressedDir = action.queuedHeavyDir || null;
   const dir = pressedDir || action.cutDir;
-  const name = pickFinisher(count, dir, action, tutorialChoice('heavy', pressedDir));
-  startDirectedCut(name, dir, action.cutFacing ?? h.face);
+  const name = pickFinisher(count, dir, action);
+  startDirectedCut(name, dir, cutFacing(action));
   h.lightCount = 0;
   recordSlashCommand('heavy', pressedDir, name);
   if (action.queuedHeavyDir) tutorialSuccess('slash');
@@ -1083,7 +1085,7 @@ function flowBucket(turn) {
   return side + (a < 1.18 ? '45' : a < 1.97 ? '90' : '135');
 }
 function queueLateSideSpin(a) {
-  if (!a?.light || a.queued === 'heavy' || a.queuedManual || hero.lightCount >= lightLimit()) return false;
+  if (tutorial?.pattern || !a?.light || a.queued === 'heavy' || a.queuedManual || hero.lightCount >= lightLimit()) return false;
   const dir = readCutDirection();
   const previous = a.sideInput === undefined ? a.cutDir : a.sideInput;
   a.sideInput = dir;
@@ -1109,7 +1111,6 @@ function startDodgeCut(roll) {
   h.lightCount = 1; h.comboIdx = 0; h.act.light = true;
   h.act.dodgeTime = roll.t;
   h.act.dodgeFacing = rollFacing;
-  recordSlashCommand('counter', dir, name, from === 0);
   tutorialSuccess('dodgeCut');
 }
 
@@ -2258,18 +2259,7 @@ const TUTORIAL_LESSONS = [
   { id: 'clash', name: '打ち合い', boss: true, hint: slash => `ボスの武器が光った後、白い線が緑に入ったら${slash}を押す。` },
 ];
 let tutorial = null;
-let slashLessons;
 let selectedSlash = null;
-
-function getSlashLessons() {
-  return slashLessons ??= buildSlashLessons({
-    pickLight, pickFinisher, dodgeCutFor,
-    idleCounter(dir) {
-      return (dir && DODGE_CUT[fourWayDirection(CUT_ANGLES[dir])]) || 'L1';
-    },
-    maxCombo: rank => LIGHT_CAP[rank],
-  });
-}
 
 function tutorialKeys() {
   return matchMedia('(pointer: coarse)').matches ? ['「斬」', '「重」', '「避」'] : ['J', 'K', 'Space'];
@@ -2280,21 +2270,18 @@ function drawSlashCommand() {
     $('#tutorial-hint').textContent = '動作が終わったら、最初の入力から。';
     return;
   }
-  const { commands, awaken } = tutorial.pattern;
-  const [slash, heavy, dodge] = tutorialKeys();
+  const { commands } = tutorial.pattern;
+  const [slash, heavy] = tutorialKeys();
   const step = commands[tutorial.step];
-  const direction = step.dir ? `${SLASH_DIRECTIONS[step.dir]}＋` : '方向を離して';
-  const prefix = commands.length > 1 && tutorial.step > 0 ? '動作中に ' : '';
-  const command = step.kind === 'counter' ? `${dodge}で回避 → 回避中に ${direction}${slash}` : `${direction}${step.kind === 'heavy' ? heavy : slash}`;
-  $('#tutorial-hint').textContent = `${tutorial.step + 1} / ${commands.length}　${awaken ? '覚醒中　' : ''}${prefix}${command}`;
-}
-
-function tutorialChoice(kind, dir, opening = false) {
-  if (!tutorial?.pattern || tutorial.resetSlash) return pickFrom;
-  const step = tutorial.pattern.commands[opening ? 0 : tutorial.step];
-  if (!step || step.kind !== kind || step.dir !== dir) return pickFrom;
-  return (pool, prev) => pool.includes(step.move) && (step.move !== prev || pool.every(move => move === prev))
-    ? step.move : pickFrom(pool, prev);
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const direction = SLASH_DIRECTIONS[step.dir];
+  const button = step.kind === 'heavy' ? heavy : slash;
+  const command = direction
+    ? (touch ? `${direction.stick}にスティックを倒したまま${button}` : `${direction.keys}を押しながら ${button}`)
+    : (touch ? `スティックから指を離して${button}` : `方向キーを離して ${button}`);
+  const prefix = tutorial.step > 0 ? '斬っている間に ' : '';
+  const count = commands.length > 1 ? `${tutorial.step + 1} / ${commands.length}　` : '';
+  $('#tutorial-hint').textContent = count + prefix + command;
 }
 
 function recordSlashCommand(kind, dir, move, opening = false) {
@@ -2368,7 +2355,6 @@ function updateTutorial() {
     return;
   }
   if (pattern) {
-    if (pattern.awaken) hero.rageT = 12;
     if (!hero.act && (tutorial.resetSlash || tutorial.step > 0)) {
       Object.assign(hero, { face: 0, neutralChain: 0, lightRecovery: 0 });
       tutorial.step = 0;
@@ -2708,24 +2694,13 @@ function setupSlashTraining() {
   }
   trigger.addEventListener('click', () => {
     if (!list.children.length) {
-      const lessons = getSlashLessons();
-      for (const group of SLASH_GROUPS) {
-        const moves = lessons.filter(lesson => lesson.group === group);
-        if (!moves.length) continue;
-        const details = document.createElement('details'), summary = document.createElement('summary'), buttons = document.createElement('div');
-        summary.textContent = `${group}（${moves.length}）`;
-        details.open = !list.children.length;
-        buttons.className = 'slash-moves';
-        for (const lesson of moves) {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.textContent = lesson.name;
-          button.dataset.slash = lesson.move;
-          button.addEventListener('click', () => { setOpen(false); startTutorial(lesson); });
-          buttons.append(button);
-        }
-        details.append(summary, buttons);
-        list.append(details);
+      for (const lesson of SLASH_LESSONS) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = lesson.name;
+        button.dataset.slash = lesson.move;
+        button.addEventListener('click', () => { setOpen(false); startTutorial(lesson); });
+        list.append(button);
       }
     }
     setOpen(true);
@@ -2736,7 +2711,7 @@ function setupSlashTraining() {
     event.stopPropagation();
     if (event.key === 'Escape') { event.preventDefault(); setOpen(false); }
     if (event.key === 'Tab') {
-      const focusable = [...modal.querySelectorAll('button, summary')].filter(el => el.offsetHeight);
+      const focusable = [...modal.querySelectorAll('button')];
       const next = event.shiftKey ? focusable.at(-1) : focusable[0];
       if (document.activeElement === (event.shiftKey ? focusable[0] : focusable.at(-1))) {
         event.preventDefault();
@@ -2771,15 +2746,14 @@ async function boot() {
   setupSlashTraining();
   G.state = 'title'; applyEnv(STAGES[0].env); refreshContinue();
   $('#loading').hidden = true; UI.title.hidden = false;
-  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS, getSlashLessons };
+  window.__game = { G, hero: () => hero, enemies, boss: () => boss, input, startGame, QUALITY, renderer, debugPose, gainExp, STAGES, hurtHero, startAction, comboChain, FINISHERS, pickLight, HERO_ACTIONS, setBoss, PARRY_WIN, flowBucket, applyGrowth, monoFactor, LIGHT_CAP, MONO_FREE, EXT_LIGHT, FINISH_EXT, DODGE_EXT, extendedLight, finisherFor, dodgeCutFor, CUT_VARIANTS, DOUBLE_CUTS, DIRECTIONAL_CUTS, DODGE_CUT, RETREAT_CUTS, SLASH_LESSONS };
 }
 
 $('.difficulty-choice').addEventListener('change', refreshContinue);
 UI.start.addEventListener('click', () => startGame(0, 1, 0, undefined, selectedDifficulty()));
 function startTutorial(pattern = null) {
   selectedSlash = pattern;
-  const technique = pattern?.technique ?? 1;
-  startGame(0, technique, 0, { technique }, 'normal', 'tutorial', pattern);
+  startGame(0, 1, 0, undefined, 'normal', 'tutorial', pattern);
 }
 $('#btn-tutorial').addEventListener('click', () => startTutorial());
 $('#btn-tutorial-retry').addEventListener('click', () => startTutorial(selectedSlash));

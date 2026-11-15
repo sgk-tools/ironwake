@@ -7,7 +7,7 @@ async function run() {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   try {
-    const page = await browser.newPage(devices['iPhone 15 Pro landscape']);
+    const page = await browser.newPage(devices['iPhone 15 Pro']);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.argv[2] || 'http://localhost:8123/dist/test.html');
@@ -17,30 +17,48 @@ async function run() {
     const modal = page.getByRole('dialog', { name: '斬撃チュートリアル' });
     const buttons = modal.locator('[data-slash]');
     await modal.waitFor();
-    assert.equal(await buttons.count(), await page.evaluate(() => window.__game.getSlashLessons().length));
-    await buttons.first().tap();
+    assert.equal(await buttons.count(), 7);
+    await modal.getByRole('button', { name: '右上への斬り込み' }).tap();
     await page.locator('#tutorial-guide').waitFor();
+    assert.match(await page.locator('#tutorial-hint').textContent(), /右上にスティックを倒したまま「斬」/);
+    const touchDiagonal = await page.evaluate(async () => {
+      const g = window.__game, h = g.hero();
+      g.renderer.render = () => {};
+      const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+      const stick = document.querySelector('#stick-zone'), rect = stick.getBoundingClientRect();
+      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      const pointer = (target, type, pointerId, clientX, clientY) =>
+        target.dispatchEvent(new PointerEvent(type, { pointerId, pointerType: 'touch', clientX, clientY }));
+      pointer(stick, 'pointerdown', 11, x, y);
+      pointer(window, 'pointermove', 11, x + 40, y - 40);
+      const afterTurn = g.G.time + 0.3;
+      while (g.G.time < afterTurn) await frame();
+      const facing = h.face;
+      pointer(document.querySelector('#btn-attack'), 'pointerdown', 12, 0, 0);
+      pointer(window, 'pointerup', 12, 0, 0);
+      await frame();
+      pointer(window, 'pointerup', 11, x + 40, y - 40);
+      return { facing, move: h.act?.name, progress: document.querySelector('#tutorial-progress').textContent };
+    });
+    assert.ok(touchDiagonal.facing < -0.6, 'the hero turned while the stick was held');
+    assert.deepEqual([touchDiagonal.move, touchDiagonal.progress], ['HIGHCUT2', '1 / 3 回']);
 
     const lessons = await page.evaluate(async () => {
       const g = window.__game, h = g.hero();
       g.renderer.render = () => {};
       const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
       const $ = selector => document.querySelector(selector);
-      const angle = { FWD: 0, L45: Math.PI / 4, R45: -Math.PI / 4, L90: Math.PI / 2, R90: -Math.PI / 2, L135: 3 * Math.PI / 4, R135: -3 * Math.PI / 4, BACK: Math.PI };
+      const angle = { FWD: 0, R45: -Math.PI / 4, L90: Math.PI / 2, BACK: Math.PI };
       const direction = dir => {
-        const facing = h.act?.cutFacing ?? h.face;
-        [g.input.mx, g.input.my] = dir ? [-Math.sin(facing + angle[dir]), Math.cos(facing + angle[dir])] : [0, 0];
+        [g.input.mx, g.input.my] = dir ? [-Math.sin(angle[dir]), Math.cos(angle[dir])] : [0, 0];
       };
       const tap = key => { g.input.press(key); g.input.held.delete(key); };
       async function tryMove(lesson) {
         for (const command of lesson.commands) {
           const previous = h.act;
           if (previous) previous.t = Math.max(previous.def.chainAt, previous.def.active[1] + 0.002);
-          if (command.kind === 'counter') {
-            direction(null);
-            tap('dodge');
-            await frame();
-            if (h.act?.name !== 'DODGE') throw new Error(`${lesson.move}: dodge did not start`);
+          if (command.dir == null && !$('#tutorial-hint').textContent.includes('スティックから指を離して')) {
+            throw new Error(`${lesson.move}: missing neutral-stick instruction`);
           }
           direction(command.dir);
           tap(command.kind === 'heavy' ? 'heavy' : 'attack');
@@ -50,20 +68,15 @@ async function run() {
           if (h.act?.name !== command.move) throw new Error(`${lesson.move}: ${command.move} became ${h.act?.name}`);
         }
       }
-      const catalog = g.getSlashLessons();
-      // The charged spin and boss counters have their own lessons. The other excluded definitions have no input route.
-      const excluded = new Set(['SPIN', 'SPIN_IN', 'SPIN_LOOP', 'CLASH_FOLLOWUP', 'CLASH_DISARM', 'HIGHCUT~H', 'HIGHCUT2~F', 'HIGHCUT2~H']);
-      const missing = Object.entries(g.HERO_ACTIONS).filter(([move, def]) => def.type && def.dmg && !excluded.has(move)
-        && !catalog.some(lesson => lesson.move === move)).map(([move]) => move);
-      if (missing.length) throw new Error(`Missing lessons: ${missing.join(', ')}`);
+      const catalog = g.SLASH_LESSONS;
       for (const lesson of catalog) {
-        g.startGame(0, lesson.technique, 0, { technique: lesson.technique }, 'normal', 'tutorial', lesson);
+        g.startGame(0, 1, 0, undefined, 'normal', 'tutorial', lesson);
         await frame();
         await tryMove(lesson);
         if ($('#tutorial-progress').textContent !== '1 / 3 回') throw new Error(`${lesson.move}: success did not count`);
       }
       const sample = catalog.find(lesson => lesson.move === 'AIR_SLASH');
-      g.startGame(0, sample.technique, 0, { technique: sample.technique }, 'normal', 'tutorial', sample);
+      g.startGame(0, 1, 0, undefined, 'normal', 'tutorial', sample);
       for (let i = 1; i <= 3; i++) {
         await tryMove(sample);
         if ($('#tutorial-progress').textContent !== `${i} / 3 回`) throw new Error('Air slash repetition did not count');
@@ -72,7 +85,7 @@ async function run() {
       return catalog.map(lesson => lesson.move);
     });
     assert.equal(new Set(lessons).size, lessons.length);
-    assert.ok(['JUMP_FLIP', 'JUMP_SPIN', 'RFLIP', 'AIR_SLASH', 'RISECUT+DOWNCUT'].every(move => lessons.includes(move)));
+    assert.deepEqual(lessons, ['HIGHCUT2', 'SPIN1', 'JUMP_FLIP', 'JUMP_SPIN', 'BACK_LEAP', 'AIR_SLASH', 'FIN2']);
     const completed = page.getByRole('dialog', { name: 'チュートリアルクリア' });
     await completed.waitFor({ timeout: 5000 });
     await completed.getByRole('button', { name: 'ほかの斬撃を選ぶ' }).tap();
