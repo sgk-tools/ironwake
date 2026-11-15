@@ -1054,7 +1054,8 @@ function chooseStat(key) {
 
 function wrapAng(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
 
-function rageMult() { return hero.rageT > 0 ? 1.35 : 1; }
+const AWAKENED_ATTACK_SPEED = 1.35;
+function rageMult() { return hero.rageT > 0 ? AWAKENED_ATTACK_SPEED : 1; }
 
 const TURN_AXIS = {
   SPIN: 'rootYaw', SPIN_LOOP: 'rootYaw', L4: 'rootYaw', SPIN1: 'rootYaw',
@@ -1236,7 +1237,7 @@ function updateHero(dt) {
   const poseAction = h.act;
   if (h.act) {
     const a = h.act, d = a.def;
-    const speedK = rageMult();
+    const speedK = d.clash ? AWAKENED_ATTACK_SPEED : rageMult();
     turnAxis = TURN_AXIS[a.name];
     const rolling = a.name === 'DODGE';
     const dodgeTime = rolling ? a.t : a.dodgeTime;
